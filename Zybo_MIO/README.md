@@ -1,7 +1,6 @@
 # Digilent Zybo Z7-20 PetaLinux : PS/PL GPIO
 
-<img width="514" height="487" alt="019" src="https://github.com/user-attachments/assets/f0008213-f6b3-4fc7-9e65-eaf56505f563" />
-
+<img width="495" height="488" alt="023" src="https://github.com/user-attachments/assets/afda69d2-ebfb-4386-aa20-884d4a5d97f5" />
 
 ## Zybo MIO GPIO Test
 
