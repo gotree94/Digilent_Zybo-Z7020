@@ -6,35 +6,43 @@ https://teachablemachine.withgoogle.com/
 
 **#학습 및 모델 생성**
 
-<img width="1347" height="907" alt="001" src="https://github.com/user-attachments/assets/d06893c9-7df8-4d95-afd9-7304eca26be3" />
+<img width="1347" height="907" alt="001" src="https://github.com/user-attachments/assets/ebe47177-9fe8-42db-9a97-c2f134eda096" />
 <br>
-<img width="1347" height="907" alt="002" src="https://github.com/user-attachments/assets/a9ed4788-5d86-4e95-8a86-27c0663d1b93" />
+<img width="1347" height="907" alt="002" src="https://github.com/user-attachments/assets/35b841f4-5c5e-420e-9a80-05213666e4dd" />
 <br>
-<img width="1347" height="907" alt="003" src="https://github.com/user-attachments/assets/9ad89db1-dfb0-4805-8643-e746f43c4212" />
+<img width="1347" height="907" alt="003" src="https://github.com/user-attachments/assets/0071f72b-1783-4546-ae96-4a436df6c834" />
 <br>
-<img width="1347" height="907" alt="004" src="https://github.com/user-attachments/assets/61c26fc9-9277-4904-88ed-3ca310ca8b5b" />
+<img width="1347" height="907" alt="004" src="https://github.com/user-attachments/assets/927096cb-bdc3-42e7-944d-f9b4f1da344b" />
 <br>
-<img width="1347" height="907" alt="005" src="https://github.com/user-attachments/assets/9fc069b7-c5e3-4349-91ed-f9ed462ce868" />
+<img width="1347" height="907" alt="005" src="https://github.com/user-attachments/assets/2b0a8726-0e77-443a-9803-1ee3f5266f62" />
 <br>
-<img width="1347" height="907" alt="006" src="https://github.com/user-attachments/assets/efcee127-bf62-4f4c-96d9-9ea9fab3e112" />
+<img width="1347" height="907" alt="006" src="https://github.com/user-attachments/assets/8ab5a76f-8495-4e2e-956d-64d7f949418b" />
 <br>
-<img width="1347" height="907" alt="007" src="https://github.com/user-attachments/assets/69d98410-c7c3-437d-9a03-20496a6f25a6" />
+<img width="1347" height="907" alt="007" src="https://github.com/user-attachments/assets/ab37fc36-1280-48b8-9f57-18c316c27823" />
 <br>
-<img width="1347" height="907" alt="008" src="https://github.com/user-attachments/assets/11909c5a-9374-4a95-88b9-eccd43b0f541" />
+<img width="1347" height="907" alt="008" src="https://github.com/user-attachments/assets/07456d98-5613-41a4-bb5b-ca620e0c8e27" />
 <br>
-<img width="1347" height="907" alt="009" src="https://github.com/user-attachments/assets/13186f40-5db7-4d43-bbf0-1a1586b34384" />
+<img width="1347" height="907" alt="009" src="https://github.com/user-attachments/assets/25606f54-75eb-47a3-b484-6ad00bbf6038" />
 <br>
-<img width="1347" height="907" alt="010" src="https://github.com/user-attachments/assets/54c94729-0967-47c8-beba-033b6daa9b90" />
+<img width="1347" height="907" alt="010" src="https://github.com/user-attachments/assets/4aba4289-012b-4a73-b017-a186ccd782a2" />
 <br>
-<img width="1347" height="907" alt="011" src="https://github.com/user-attachments/assets/e9130dd9-fb32-4e66-9003-96caea40c475" />
+<img width="1347" height="907" alt="011" src="https://github.com/user-attachments/assets/f979ca5d-223b-4326-9b1e-0b13ca72a676" />
 <br>
-<img width="1347" height="907" alt="012" src="https://github.com/user-attachments/assets/29cc9ec2-fdae-4482-abe1-afe080a7ba77" />
+<img width="1347" height="907" alt="012" src="https://github.com/user-attachments/assets/dafeff83-bd37-4d70-895c-28f5bf80ebdd" />
 <br>
-<img width="1347" height="907" alt="013" src="https://github.com/user-attachments/assets/b5500047-35a3-40fb-9c1b-dede8797a506" />
+<img width="1347" height="907" alt="013" src="https://github.com/user-attachments/assets/f7fe2264-b9cd-4ae0-8e38-fa0dbf88c253" />
 <br>
-<img width="1347" height="907" alt="014" src="https://github.com/user-attachments/assets/731ba1d6-cb01-4183-8270-fc5bceb70904" />
+<img width="1347" height="907" alt="014" src="https://github.com/user-attachments/assets/8ae486b4-dd02-47f5-8c87-4e5dc9e3aaf1" />
 <br>
-<img width="1347" height="907" alt="015" src="https://github.com/user-attachments/assets/9ec615fb-0871-4167-82d1-72dd66f4eb6d" />
+<img width="1347" height="907" alt="015" src="https://github.com/user-attachments/assets/a913acbc-77e4-4f3e-941c-0017fe0fc2ff" />
+<br>
+<img width="1347" height="907" alt="016" src="https://github.com/user-attachments/assets/3b00c0a1-6f7b-4f43-a4b6-3ac9e77d455a" />
+<br>
+<img width="1347" height="907" alt="017" src="https://github.com/user-attachments/assets/b419a35d-5448-4cd3-b8df-77d9f4fcf0b8" />
+<br>
+<img width="1347" height="907" alt="018" src="https://github.com/user-attachments/assets/d782db22-9c2b-4e87-b575-fecbe797e0e4" />
+<br>
+<img width="1347" height="907" alt="020" src="https://github.com/user-attachments/assets/323746d6-c369-4dab-b8fe-d73f849372ae" />
 <br>
 
 **#디렉토리 구조**
@@ -58,7 +66,7 @@ teachable_machine_test/
                   └── ...
 ```
 
-<img width="491" height="280" alt="018" src="https://github.com/user-attachments/assets/ae1d4a1a-3fae-4c32-87c4-da86feea51f6" />
+<img width="551" height="140" alt="019" src="https://github.com/user-attachments/assets/77c24028-4dd6-4dc8-a6d9-177e432dec6e" />
 
 
 * test_images.zip : https://drive.google.com/file/d/1j6IP2A7kdL3q7s2HmFmBlznltVjphpnA/view?usp=sharing
