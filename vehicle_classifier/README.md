@@ -48,10 +48,10 @@ https://teachablemachine.withgoogle.com/
 **#디렉토리 구조**
 ```
 teachable_machine_test/
-├── vehicle_classifier.py
-├── vehicle_classifier_quantized.py
+├── vehicle_classifier.py (부동소수점)
+├── vehicle_classifier_quantized.py (양자화됨)
 ├── model_unquant.tflite (부동소수점)
-├── model.tflite(양자화됨)
+├── model.tflite (양자화됨)
 ├── labels.txt          # Class 0: cars \ Class 1: airplanes \ Class 2: ships
 └── test_images/
     ├── airplanes ├── airplane1.jpg
