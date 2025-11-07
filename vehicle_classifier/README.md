@@ -49,6 +49,7 @@ https://teachablemachine.withgoogle.com/
 ```
 teachable_machine_test/
 ├── vehicle_classifier.py
+├── vehicle_classifier_quantized.py
 ├── model_unquant.tflite
 ├── labels.txt          # Class 0: cars \ Class 1: airplanes \ Class 2: ships
 └── test_images/
@@ -68,9 +69,10 @@ teachable_machine_test/
 
 <img width="551" height="140" alt="019" src="https://github.com/user-attachments/assets/77c24028-4dd6-4dc8-a6d9-177e432dec6e" />
 
-
 * test_images.zip : https://drive.google.com/file/d/1j6IP2A7kdL3q7s2HmFmBlznltVjphpnA/view?usp=sharing
 * train.zip : https://drive.google.com/file/d/1oQQlkj5Lb8Kwphzzd17-OlMqaLpR9yaY/view?usp=sharing
+
+##Tensorflow Lite : 부동소수점
 
 **#실행 결과**
 
@@ -219,3 +221,16 @@ INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
   🚢 ships        | 100.00% | █████████████████████████████████████████████████░
 ======================================================================
 ```
+
+---
+
+
+##Tensorflow Lite : 양자화됨
+
+**#실행 결과**
+
+```
+
+```
+
+
