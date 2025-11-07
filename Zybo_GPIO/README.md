@@ -2,6 +2,9 @@
 
 Zybo Z7-020에서 PL(Programmable Logic) 영역의 GPIO를 사용하여 LED를 제어하는 전체 프로세스를 단계별로 설명합니다.
 
+<img width="495" height="488" alt="023" src="https://github.com/user-attachments/assets/a28c80bb-bb28-4b34-8b94-fa75e9859d27" />
+
+
 ## 📋 목차
 1. [Vivado에서 하드웨어 설계](#1️⃣-vivado에서-하드웨어-설계-windows)
 2. [PetaLinux 프로젝트 생성 및 빌드](#2️⃣-petalinux-프로젝트-생성-ubuntu-2204)
