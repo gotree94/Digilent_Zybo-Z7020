@@ -4,8 +4,8 @@
 
 https://teachablemachine.withgoogle.com/
 
-**#학습 및 모델 생성**
-
+<details>
+<summary>🖼️ 학습 및 모델 생성 </summary>
 <img width="640" height="640" alt="001" src="https://github.com/user-attachments/assets/ebe47177-9fe8-42db-9a97-c2f134eda096" />
 <br>
 <img width="640" height="640" alt="002" src="https://github.com/user-attachments/assets/35b841f4-5c5e-420e-9a80-05213666e4dd" />
@@ -44,6 +44,7 @@ https://teachablemachine.withgoogle.com/
 <br>
 <img width="640" height="640" alt="020" src="https://github.com/user-attachments/assets/323746d6-c369-4dab-b8fe-d73f849372ae" />
 <br>
+</details>
 
 **#디렉토리 구조**
 ```
