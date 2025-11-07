@@ -40,6 +40,10 @@
  * E = Extended (Tj = 0°C to +100°C)
  * I = Industrial (Tj = –40°C to +100°C)
 
+<img width="1354" height="864" alt="024" src="https://github.com/user-attachments/assets/67a63815-aec8-4000-92d1-bdb633852e73" />
+
+
+
 ---
 
 ## 주요 차이점 요약
