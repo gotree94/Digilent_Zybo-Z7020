@@ -68,7 +68,8 @@ teachable_machine_test/
                   └── ...
 ```
 
-<img width="551" height="140" alt="019" src="https://github.com/user-attachments/assets/77c24028-4dd6-4dc8-a6d9-177e432dec6e" />
+<img width="651" height="135" alt="020" src="https://github.com/user-attachments/assets/b8b5b462-2bc8-44d2-a6b1-9b36dd2cfcb6" />
+
 
 * test_images.zip : https://drive.google.com/file/d/1j6IP2A7kdL3q7s2HmFmBlznltVjphpnA/view?usp=sharing
 * train.zip : https://drive.google.com/file/d/1oQQlkj5Lb8Kwphzzd17-OlMqaLpR9yaY/view?usp=sharing
