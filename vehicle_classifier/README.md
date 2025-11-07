@@ -253,9 +253,9 @@ chmod +x vehicle_classifier.py
 
 ---
 
-## 📊 JSON 결과 파일 구조
+### 📊 JSON 결과 파일 구조
 
-### 단일/디렉토리 테스트 (`-o result.json`)
+#### 단일/디렉토리 테스트 (`-o result.json`)
 ```json
 {
   "timestamp": "2025-11-04T11:36:50.123456",
@@ -274,7 +274,7 @@ chmod +x vehicle_classifier.py
 }
 ```
 
-### 클래스별 테스트 (`-s` + `-o results.json`)
+#### 클래스별 테스트 (`-s` + `-o results.json`)
 ```json
 {
   "timestamp": "2025-11-04T11:36:50.123456",
@@ -304,7 +304,7 @@ chmod +x vehicle_classifier.py
 
 ---
 
-## 🎨 명령어 옵션 정리
+### 🎨 명령어 옵션 정리
 
 | 옵션 | 필수 | 설명 | 예제 |
 |------|------|------|------|
@@ -318,30 +318,30 @@ chmod +x vehicle_classifier.py
 
 ---
 
-## 🚀 빠른 시작 가이드
+### 🚀 빠른 시작 가이드
 
-### 1단계: 모델 및 라벨 확인
+#### 1단계: 모델 및 라벨 확인
 ```bash
 # 파일 존재 확인
 dir model_unquant.tflite
 dir labels.txt
 ```
 
-### 2단계: 단일 이미지로 테스트
+#### 2단계: 단일 이미지로 테스트
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test_images\airplanes\airplane1.jpg
 ```
 
-### 3단계: 정확도 평가
+#### 3단계: 정확도 평가
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -s test_images -o accuracy_report.json
 ```
 
 ---
 
-## 🐛 문제 해결
+### 🐛 문제 해결
 
-### 모델 파일 없음
+#### 모델 파일 없음
 ```
 ❌ FileNotFoundError: 모델 파일을 찾을 수 없습니다
 ```
@@ -350,7 +350,7 @@ python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -s test_image
 python vehicle_classifier.py -m ./model_unquant.tflite -l ./labels.txt -i test.jpg
 ```
 
-### 이미지 경로 오류
+#### 이미지 경로 오류
 ```
 ❌ FileNotFoundError: 이미지를 찾을 수 없습니다
 ```
@@ -359,7 +359,7 @@ python vehicle_classifier.py -m ./model_unquant.tflite -l ./labels.txt -i test.j
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i C:\Users\52\Desktop\test.jpg
 ```
 
-### TensorFlow 오류
+#### TensorFlow 오류
 ```
 ❌ TensorFlow Lite를 찾을 수 없습니다
 ```
@@ -370,9 +370,9 @@ pip install tensorflow==2.15.0
 
 ---
 
-## 📝 실제 워크플로우 예제
+### 📝 실제 워크플로우 예제
 
-### 시나리오 1: 새 모델 빠른 검증
+#### 시나리오 1: 새 모델 빠른 검증
 ```bash
 # 1. 각 클래스에서 1장씩 테스트
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test_images\airplanes\airplane1.jpg
@@ -380,19 +380,19 @@ python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test_image
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test_images\ships\ship1.jpg
 ```
 
-### 시나리오 2: 전체 데이터셋 평가
+#### 시나리오 2: 전체 데이터셋 평가
 ```bash
 # 모든 클래스 테스트 + JSON 저장
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -s test_images -o evaluation_results.json
 ```
 
-### 시나리오 3: 특정 클래스 집중 테스트
+#### 시나리오 3: 특정 클래스 집중 테스트
 ```bash
 # 비행기만 집중 테스트
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d test_images\airplanes -o airplane_results.json
 ```
 
-### 시나리오 4: 배치 처리
+#### 시나리오 4: 배치 처리
 ```bash
 # 여러 모델 비교
 python vehicle_classifier.py -m model_v1.tflite -l labels.txt -s test_images -o results_v1.json
@@ -402,15 +402,15 @@ python vehicle_classifier.py -m model_v3.tflite -l labels.txt -s test_images -o 
 
 ---
 
-## 🎯 성능 벤치마크 명령어
+### 🎯 성능 벤치마크 명령어
 
-### 추론 속도 측정
+#### 추론 속도 측정
 ```bash
 # 100장 이미지로 속도 테스트
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d large_dataset --no-details
 ```
 
-### 정확도 vs 속도 비교
+#### 정확도 vs 속도 비교
 ```bash
 # 양자화 모델
 python vehicle_classifier.py -m model_quantized.tflite -l labels.txt -s test_images -o quant_results.json
@@ -421,9 +421,9 @@ python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -s test_image
 
 ---
 
-## 💻 스크립트 자동화 예제 (배치 파일)
+### 💻 스크립트 자동화 예제 (배치 파일)
 
-### Windows: `test_all.bat`
+#### Windows: `test_all.bat`
 ```batch
 @echo off
 echo 전체 테스트 시작...
@@ -434,7 +434,7 @@ echo 테스트 완료!
 pause
 ```
 
-### Linux: `test_all.sh`
+#### Linux: `test_all.sh`
 ```bash
 #!/bin/bash
 echo "전체 테스트 시작..."
@@ -446,7 +446,7 @@ echo "테스트 완료!"
 
 ---
 
-## 📌 요약: 가장 많이 쓰는 명령어 TOP 5
+### 📌 요약: 가장 많이 쓰는 명령어 TOP 5
 
 ```bash
 # 1. 단일 이미지 테스트 (가장 기본)
@@ -614,7 +614,10 @@ INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
   🚢 ships        | 100.00% | █████████████████████████████████████████████████░
 ======================================================================
 ```
+
 </details>
+
+
 ---
 
 
