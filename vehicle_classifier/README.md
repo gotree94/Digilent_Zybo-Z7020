@@ -6,43 +6,43 @@ https://teachablemachine.withgoogle.com/
 
 **#학습 및 모델 생성**
 
-<img width="1347" height="907" alt="001" src="https://github.com/user-attachments/assets/ebe47177-9fe8-42db-9a97-c2f134eda096" />
+<img width="640" height="640" alt="001" src="https://github.com/user-attachments/assets/ebe47177-9fe8-42db-9a97-c2f134eda096" />
 <br>
-<img width="1347" height="907" alt="002" src="https://github.com/user-attachments/assets/35b841f4-5c5e-420e-9a80-05213666e4dd" />
+<img width="640" height="640" alt="002" src="https://github.com/user-attachments/assets/35b841f4-5c5e-420e-9a80-05213666e4dd" />
 <br>
-<img width="1347" height="907" alt="003" src="https://github.com/user-attachments/assets/0071f72b-1783-4546-ae96-4a436df6c834" />
+<img width="640" height="640" alt="003" src="https://github.com/user-attachments/assets/0071f72b-1783-4546-ae96-4a436df6c834" />
 <br>
-<img width="1347" height="907" alt="004" src="https://github.com/user-attachments/assets/927096cb-bdc3-42e7-944d-f9b4f1da344b" />
+<img width="640" height="640" alt="004" src="https://github.com/user-attachments/assets/927096cb-bdc3-42e7-944d-f9b4f1da344b" />
 <br>
-<img width="1347" height="907" alt="005" src="https://github.com/user-attachments/assets/2b0a8726-0e77-443a-9803-1ee3f5266f62" />
+<img width="640" height="640" alt="005" src="https://github.com/user-attachments/assets/2b0a8726-0e77-443a-9803-1ee3f5266f62" />
 <br>
-<img width="1347" height="907" alt="006" src="https://github.com/user-attachments/assets/8ab5a76f-8495-4e2e-956d-64d7f949418b" />
+<img width="640" height="640" alt="006" src="https://github.com/user-attachments/assets/8ab5a76f-8495-4e2e-956d-64d7f949418b" />
 <br>
-<img width="1347" height="907" alt="007" src="https://github.com/user-attachments/assets/ab37fc36-1280-48b8-9f57-18c316c27823" />
+<img width="640" height="640" alt="007" src="https://github.com/user-attachments/assets/ab37fc36-1280-48b8-9f57-18c316c27823" />
 <br>
-<img width="1347" height="907" alt="008" src="https://github.com/user-attachments/assets/07456d98-5613-41a4-bb5b-ca620e0c8e27" />
+<img width="640" height="640" alt="008" src="https://github.com/user-attachments/assets/07456d98-5613-41a4-bb5b-ca620e0c8e27" />
 <br>
-<img width="1347" height="907" alt="009" src="https://github.com/user-attachments/assets/25606f54-75eb-47a3-b484-6ad00bbf6038" />
+<img width="640" height="640" alt="009" src="https://github.com/user-attachments/assets/25606f54-75eb-47a3-b484-6ad00bbf6038" />
 <br>
-<img width="1347" height="907" alt="010" src="https://github.com/user-attachments/assets/4aba4289-012b-4a73-b017-a186ccd782a2" />
+<img width="640" height="640" alt="010" src="https://github.com/user-attachments/assets/4aba4289-012b-4a73-b017-a186ccd782a2" />
 <br>
-<img width="1347" height="907" alt="011" src="https://github.com/user-attachments/assets/f979ca5d-223b-4326-9b1e-0b13ca72a676" />
+<img width="640" height="640" alt="011" src="https://github.com/user-attachments/assets/f979ca5d-223b-4326-9b1e-0b13ca72a676" />
 <br>
-<img width="1347" height="907" alt="012" src="https://github.com/user-attachments/assets/dafeff83-bd37-4d70-895c-28f5bf80ebdd" />
+<img width="640" height="640" alt="012" src="https://github.com/user-attachments/assets/dafeff83-bd37-4d70-895c-28f5bf80ebdd" />
 <br>
-<img width="1347" height="907" alt="013" src="https://github.com/user-attachments/assets/f7fe2264-b9cd-4ae0-8e38-fa0dbf88c253" />
+<img width="640" height="640" alt="013" src="https://github.com/user-attachments/assets/f7fe2264-b9cd-4ae0-8e38-fa0dbf88c253" />
 <br>
-<img width="1347" height="907" alt="014" src="https://github.com/user-attachments/assets/8ae486b4-dd02-47f5-8c87-4e5dc9e3aaf1" />
+<img width="640" height="640" alt="014" src="https://github.com/user-attachments/assets/8ae486b4-dd02-47f5-8c87-4e5dc9e3aaf1" />
 <br>
-<img width="1347" height="907" alt="015" src="https://github.com/user-attachments/assets/a913acbc-77e4-4f3e-941c-0017fe0fc2ff" />
+<img width="640" height="640" alt="015" src="https://github.com/user-attachments/assets/a913acbc-77e4-4f3e-941c-0017fe0fc2ff" />
 <br>
-<img width="1347" height="907" alt="016" src="https://github.com/user-attachments/assets/3b00c0a1-6f7b-4f43-a4b6-3ac9e77d455a" />
+<img width="640" height="640" alt="016" src="https://github.com/user-attachments/assets/3b00c0a1-6f7b-4f43-a4b6-3ac9e77d455a" />
 <br>
-<img width="1347" height="907" alt="017" src="https://github.com/user-attachments/assets/b419a35d-5448-4cd3-b8df-77d9f4fcf0b8" />
+<img width="640" height="640" alt="017" src="https://github.com/user-attachments/assets/b419a35d-5448-4cd3-b8df-77d9f4fcf0b8" />
 <br>
-<img width="1347" height="907" alt="018" src="https://github.com/user-attachments/assets/d782db22-9c2b-4e87-b575-fecbe797e0e4" />
+<img width="640" height="640" alt="018" src="https://github.com/user-attachments/assets/d782db22-9c2b-4e87-b575-fecbe797e0e4" />
 <br>
-<img width="1347" height="907" alt="020" src="https://github.com/user-attachments/assets/323746d6-c369-4dab-b8fe-d73f849372ae" />
+<img width="640" height="640" alt="020" src="https://github.com/user-attachments/assets/323746d6-c369-4dab-b8fe-d73f849372ae" />
 <br>
 
 **#디렉토리 구조**
