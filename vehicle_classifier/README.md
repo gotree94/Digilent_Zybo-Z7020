@@ -50,7 +50,8 @@ https://teachablemachine.withgoogle.com/
 teachable_machine_test/
 ├── vehicle_classifier.py
 ├── vehicle_classifier_quantized.py
-├── model_unquant.tflite
+├── model_unquant.tflite (부동소수점)
+├── model.tflite(양자화됨)
 ├── labels.txt          # Class 0: cars \ Class 1: airplanes \ Class 2: ships
 └── test_images/
     ├── airplanes ├── airplane1.jpg
