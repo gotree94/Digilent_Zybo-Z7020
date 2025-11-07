@@ -77,6 +77,72 @@ teachable_machine_test/
 
 # Tensorflow Lite : 부동소수점
 
+#### 기본 명령어
+```bash
+python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test_images\airplanes\airplane1.jpg
+```
+
+#### 한 디렉토리의 모든 이미지 테스트
+```bash
+python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d test_images\airplanes
+```
+
+#### 여러 이미지가 섞인 디렉토리
+```bash
+python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d mixed_images
+```
+
+```
+(base) C:\Users\Administrator\Desktop\ML\vehicle_classifier>python vehicle_classifier1.py -m model_unquant.tflite -l labels.txt -i test_images\airplanes\airplane1.jpg
+2025-11-04 01:07:11.491887: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-11-04 01:07:12.455840: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+✓ TensorFlow Lite 사용
+C:\ProgramData\anaconda3\Lib\site-packages\tensorflow\lite\python\interpreter.py:457: UserWarning:     Warning: tf.lite.Interpreter is deprecated and is scheduled for deletion in
+    TF 2.20. Please use the LiteRT interpreter from the ai_edge_litert package.
+    See the [migration guide](https://ai.google.dev/edge/litert/migration)
+    for details.
+
+  warnings.warn(_INTERPRETER_DELETION_WARNING)
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+
+======================================================================
+🚗 교통수단 분류 모델 정보
+======================================================================
+모델 파일: model_unquant.tflite
+모델 경로: model_unquant.tflite
+라벨 파일: labels.txt
+입력 크기: 224x224x3
+입력 타입: float32
+클래스 수: 3
+클래스 목록:
+  [0] cars
+  [1] airplanes
+  [2] ships
+
+✓ Float 모델 (FP32)
+
+⚙️  전처리: Teachable Machine 방식 ([-1, 1] 정규화)
+======================================================================
+
+
+📸 이미지 테스트: test_images\airplanes\airplane1.jpg
+
+======================================================================
+✈️ 예측 결과
+======================================================================
+✓ 예측 클래스: AIRPLANES
+✓ 신뢰도: 100.00%
+✓ 추론 시간: 2.07ms
+
+📊 모든 클래스 확률:
+----------------------------------------------------------------------
+  🚗 cars         |   0.00% | ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  ✈️ airplanes    | 100.00% | ██████████████████████████████████████████████████
+  🚢 ships        |   0.00% | ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+======================================================================
+```
+
+
 <details>
 <summary>🚗 Vehicle Classifier 테스트 명령어 가이드 </summary>
 
@@ -628,7 +694,61 @@ INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
 **#실행 결과**
 
 ```
+python vehicle_classifier_quantized.py -m model.tflite -l labels.txt -i test_images\airplanes\airplane1.jpg
+2025-11-07 18:17:06.472940: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-11-07 18:17:07.450572: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+✓ TensorFlow Lite 사용
+C:\ProgramData\anaconda3\Lib\site-packages\tensorflow\lite\python\interpreter.py:457: UserWarning:     Warning: tf.lite.Interpreter is deprecated and is scheduled for deletion in
+    TF 2.20. Please use the LiteRT interpreter from the ai_edge_litert package.
+    See the [migration guide](https://ai.google.dev/edge/litert/migration)
+    for details.
 
+  warnings.warn(_INTERPRETER_DELETION_WARNING)
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+
+======================================================================
+🖥️  플랫폼: Windows
+🐍 Python: 3.12.7
+======================================================================
+🚗 교통수단 분류 모델 정보 (양자화 모델)
+======================================================================
+모델 파일: model.tflite
+모델 경로: model.tflite
+라벨 파일: labels.txt
+입력 크기: 224x224x3
+입력 타입: uint8
+출력 타입: uint8
+클래스 수: 3
+클래스 목록:
+  [0] cars
+  [1] airplanes
+  [2] ships
+
+✓ 양자화 모델 (UINT8/INT8)
+  입력 양자화: scale=0.00784314, zero_point=127
+  출력 양자화: scale=0.00390625, zero_point=0
+
+⚙️  전처리: 양자화 모델용 (UINT8 [0, 255])
+⚙️  최적화: Windows (멀티 스레드)
+======================================================================
+
+
+📸 이미지 테스트: test_images\airplanes\airplane1.jpg
+======================================================================
+
+======================================================================
+🚗 예측 결과 [Windows]
+======================================================================
+✓ 예측 클래스: AIRPLANES
+✓ 신뢰도: 57.52%
+✓ 추론 시간: 4.10ms
+
+📊 모든 클래스 확률:
+----------------------------------------------------------------------
+  🚗 cars         |  21.24% | ██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  ✈️ airplanes    |  57.52% | ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░
+  🚢 ships        |  21.24% | ██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+======================================================================
 ```
 
 
