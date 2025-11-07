@@ -77,9 +77,9 @@ teachable_machine_test/
 
 # Tensorflow Lite : 부동소수점
 
-# 🚗 Vehicle Classifier 테스트 명령어 가이드
+## 🚗 Vehicle Classifier 테스트 명령어 가이드
 
-## 📋 기본 구조
+### 📋 기본 구조
 
 ```bash
 python vehicle_classifier.py -m <모델> -l <라벨> [옵션]
@@ -87,47 +87,47 @@ python vehicle_classifier.py -m <모델> -l <라벨> [옵션]
 
 ---
 
-## 🎯 1. 단일 이미지 테스트
+### 🎯 1. 단일 이미지 테스트
 
-### 기본 명령어
+#### 기본 명령어
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test_images\airplanes\airplane1.jpg
 ```
 
-### 상세 정보 없이 테스트
+#### 상세 정보 없이 테스트
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test.jpg --no-details
 ```
 
-### 결과 JSON 저장
+#### 결과 JSON 저장
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test.jpg -o result.json
 ```
 
 ---
 
-## 📁 2. 디렉토리 전체 테스트
+### 📁 2. 디렉토리 전체 테스트
 
-### 한 디렉토리의 모든 이미지 테스트
+#### 한 디렉토리의 모든 이미지 테스트
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d test_images\airplanes
 ```
 
-### 여러 이미지가 섞인 디렉토리
+#### 여러 이미지가 섞인 디렉토리
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d mixed_images
 ```
 
-### 결과 JSON 저장
+#### 결과 JSON 저장
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d test_images\cars -o cars_results.json
 ```
 
 ---
 
-## 🗂️ 3. 클래스별 하위 디렉토리 테스트 (정확도 측정)
+### 🗂️ 3. 클래스별 하위 디렉토리 테스트 (정확도 측정)
 
-### 기본 구조
+#### 기본 구조
 ```
 test_images/
 ├── airplanes/
@@ -144,21 +144,21 @@ test_images/
     └── ...
 ```
 
-### 전체 클래스 테스트 (정확도 계산)
+#### 전체 클래스 테스트 (정확도 계산)
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -s test_images
 ```
 
-### 결과 JSON 저장
+#### 결과 JSON 저장
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -s test_images -o full_test_results.json
 ```
 
 ---
 
-## 💡 실전 명령어 예제
+### 💡 실전 명령어 예제
 
-### 예제 1: 비행기 이미지 1장 테스트
+#### 예제 1: 비행기 이미지 1장 테스트
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test_images\airplanes\airplane1.jpg
 ```
@@ -175,7 +175,7 @@ python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test_image
   🚢 ships       |   1.03% | █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 ```
 
-### 예제 2: 자동차 폴더 전체 테스트
+#### 예제 2: 자동차 폴더 전체 테스트
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d test_images\cars
 ```
@@ -194,7 +194,7 @@ python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d test_image
 평균 추론 시간: 2.11ms
 ```
 
-### 예제 3: 전체 데이터셋 정확도 평가
+#### 예제 3: 전체 데이터셋 정확도 평가
 ```bash
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -s test_images -o accuracy_report.json
 ```
@@ -230,9 +230,9 @@ python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -s test_image
 
 ---
 
-## 🔧 Windows vs PetaLinux 명령어 차이
+### 🔧 Windows vs PetaLinux 명령어 차이
 
-### Windows (PowerShell/CMD)
+#### Windows (PowerShell/CMD)
 ```bash
 # 역슬래시 사용
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test_images\airplanes\airplane1.jpg
