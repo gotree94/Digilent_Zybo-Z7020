@@ -77,7 +77,8 @@ teachable_machine_test/
 
 # Tensorflow Lite : 부동소수점
 
-## 🚗 Vehicle Classifier 테스트 명령어 가이드
+<details>
+<summary>🚗 Vehicle Classifier 테스트 명령어 가이드 </summary>
 
 ### 📋 기본 구조
 
@@ -464,6 +465,7 @@ python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -i test.jpg -
 # 5. 디렉토리 테스트 + 결과 저장
 python vehicle_classifier.py -m model_unquant.tflite -l labels.txt -d images -o results.json
 ```
+</details>
 
 
 <details>
