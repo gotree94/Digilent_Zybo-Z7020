@@ -74,7 +74,7 @@ teachable_machine_test/
 * test_images.zip : https://drive.google.com/file/d/1j6IP2A7kdL3q7s2HmFmBlznltVjphpnA/view?usp=sharing
 * train.zip : https://drive.google.com/file/d/1oQQlkj5Lb8Kwphzzd17-OlMqaLpR9yaY/view?usp=sharing
 
-##Tensorflow Lite : 부동소수점
+# Tensorflow Lite : 부동소수점
 
 **#실행 결과**
 
@@ -227,7 +227,7 @@ INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
 ---
 
 
-##Tensorflow Lite : 양자화됨
+# Tensorflow Lite : 양자화됨
 
 **#실행 결과**
 
