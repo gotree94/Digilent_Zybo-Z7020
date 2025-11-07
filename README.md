@@ -71,11 +71,6 @@
 - **Zybo Z7-20**: 6x Pmod + Arduino shield (최다 확장)
 - **PYNQ-Z2**: Arduino + RPi + 2x Pmod (호환성 중시)
 - **Kria KV260**: FMC + Pmod (산업용 고속 인터페이스)
-
-<img width="979" height="673" alt="zynq" src="https://github.com/user-attachments/assets/4cee59b4-bcec-4054-bb71-bcfbdb984258" />
-
-<img width="991" height="672" alt="zynq-01" src="https://github.com/user-attachments/assets/676ef826-20bf-48ce-ba23-70c693331433" />
-
 ---
 
 ## 제품별 추천 사용 사례
@@ -143,40 +138,7 @@ set board_part "digilentinc.com:zybo-z7-20:part0:1.1"
 ```
 * Tools > Run Tcl Script.. > create_zybo_petalinux_project.tcl 선택 후 실행
 
-<details>
-<summary>🖼️ Vivado tcl</summary>
-
-<img width="1342" height="1035" alt="peta_001" src="https://github.com/user-attachments/assets/4344e0f1-3a85-449d-bb32-e5c16a35032a" />
-<br>
-<img width="1352" height="632" alt="peta_002" src="https://github.com/user-attachments/assets/ed910700-0c4e-4582-81c1-b049fcab7280" />
-<br>
-<img width="1342" height="1035" alt="peta_003" src="https://github.com/user-attachments/assets/6bd8c4d4-0f95-44fc-a5c3-14b58db0c9b2" />
-<br>
-<img width="1342" height="1035" alt="peta_004" src="https://github.com/user-attachments/assets/24c256aa-23b3-4a9f-899f-5f97e9fa99b5" />
-<br>
-<img width="1342" height="1035" alt="peta_005" src="https://github.com/user-attachments/assets/7f161977-2d44-47d2-a455-a444bef39a22" />
-
-</details>
-
 * File > Export > Xsa 생성(include bit stream 선택)
-<details>
-<summary>🖼️ Hardware Export </summary>
-  
-<img width="1342" height="1035" alt="peta_006" src="https://github.com/user-attachments/assets/34564a7b-0509-4b70-9e20-a1c7a2230f6a" />
-<br>
-<img width="786" height="668" alt="peta_007" src="https://github.com/user-attachments/assets/7cfd1527-2ca7-49aa-8a2f-882af42fdafc" />
-<br>
-<img width="786" height="668" alt="peta_008" src="https://github.com/user-attachments/assets/c4ff1ba3-4f0d-43c8-a57f-5e67a0c0f6ca" />
-<br>
-<img width="786" height="668" alt="peta_009" src="https://github.com/user-attachments/assets/25759311-c575-4183-a7fc-e515224ee5f6" />
-<br>
-<img width="786" height="668" alt="peta_010" src="https://github.com/user-attachments/assets/20d79f17-6db2-4c13-a9da-bced42fb38f6" />
-<br>
-<img width="1342" height="1035" alt="peta_011" src="https://github.com/user-attachments/assets/fda4bc9b-cf55-4552-89e4-4b387cf95846" />
-<br>
-<img width="1342" height="1035" alt="peta_012" src="https://github.com/user-attachments/assets/69166143-c7e1-4a16-84c2-479f585be8fa" />
-<br>
-</details>
 
 ## 준비할 파일
    * petalinux-v2022.2-10141622-installer.run
@@ -247,134 +209,8 @@ lsb_release -a
    ```
 
 5. **설치 완료 후 재부팅**
-
-<details>
-<summary>🖼️ Ubuntu install </summary>
-  
-<img width="495" height="392" alt="vm_install_001" src="https://github.com/user-attachments/assets/fc7c3e1f-6e8b-4e7d-a152-89a41f79ef08" />
-<img width="495" height="392" alt="vm_install_002" src="https://github.com/user-attachments/assets/d9c6a66c-dc4d-4fe3-8125-dc7fd7e07182" />
-<br>
-<img width="495" height="392" alt="vm_install_003" src="https://github.com/user-attachments/assets/87aa8da0-ef4f-4c7f-a6b3-f1a30d862acb" />
-<img width="495" height="392" alt="vm_install_004" src="https://github.com/user-attachments/assets/c350ddac-fc1b-49d2-a74c-0cc88ab76dd4" />
-<br>
-<img width="495" height="392" alt="vm_install_005" src="https://github.com/user-attachments/assets/efcbc90e-37d6-4aa6-a635-4e2f590e88a8" />
-<br>
-<img width="1219" height="669" alt="vm_install_006" src="https://github.com/user-attachments/assets/59dfb86d-cf08-45b2-8528-bf0bee6befef" />
-<br>
-<img width="755" height="584" alt="vm_install_007" src="https://github.com/user-attachments/assets/b22545b4-ab35-4cdd-ae70-f6f8ea92aef3" />
-<br>
-<img width="755" height="584" alt="vm_install_008" src="https://github.com/user-attachments/assets/fe7cd878-a3e8-43c5-922b-68adb82e34aa" />
-<br>
-<img width="755" height="584" alt="vm_install_009" src="https://github.com/user-attachments/assets/231bf4b3-ee1f-4047-8b29-225c032f689b" />
-<br>
-<img width="755" height="584" alt="vm_install_010" src="https://github.com/user-attachments/assets/152df622-6bbf-41ea-aa22-88593a35329f" />
-<br>
-<img width="755" height="584" alt="vm_install_011" src="https://github.com/user-attachments/assets/4a3814d0-7e4e-483e-a7a6-c1637fb02ec2" />
-<br>
-<img width="755" height="584" alt="vm_install_012" src="https://github.com/user-attachments/assets/c21339aa-68fd-464b-8edd-272f37e340c4" />
-<br>
-<img width="1243" height="669" alt="vm_install_013" src="https://github.com/user-attachments/assets/55e11022-1126-47ce-90c7-4e6dbc9777b4" />
-<br>
-<img width="1255" height="669" alt="vm_install_014" src="https://github.com/user-attachments/assets/f34f0b27-1910-4dd3-afe9-0b20b2c66512" />
-<br>
-<img width="722" height="475" alt="vm_install_015" src="https://github.com/user-attachments/assets/79a273a8-6fb6-4d90-a28b-892d3966424e" />
-<br>
-<img width="518" height="334" alt="vm_install_016" src="https://github.com/user-attachments/assets/6e9d2326-655c-4ea0-b839-2c64f511d1d1" />
-<br>
-<img width="1282" height="875" alt="vm_install_017" src="https://github.com/user-attachments/assets/94d606ab-9105-4170-b89e-adafac89884b" />
-<br>
-<img width="1282" height="875" alt="vm_install_018" src="https://github.com/user-attachments/assets/4867f15b-59f6-456d-af03-d35c7166e17b" />
-<br>
-<img width="1282" height="875" alt="vm_install_019" src="https://github.com/user-attachments/assets/1bda79da-b68b-4223-ab61-a710ccea4b32" />
-<br>
-<img width="1282" height="875" alt="vm_install_020" src="https://github.com/user-attachments/assets/55a8dd1d-4969-4ab4-a6d7-e30b453d1572" />
-<br>
-<img width="1282" height="875" alt="vm_install_021" src="https://github.com/user-attachments/assets/8849d88b-8a70-455a-9acd-765b9ce22eed" />
-<br>
-<img width="1282" height="875" alt="vm_install_022" src="https://github.com/user-attachments/assets/2acb03b7-a13f-47e7-adbc-6526ffdb2121" />
-<br>
-<img width="1282" height="875" alt="vm_install_023" src="https://github.com/user-attachments/assets/72958bd7-7674-4645-939f-0ff73d66a559" />
-<br>
-<img width="1282" height="875" alt="vm_install_024" src="https://github.com/user-attachments/assets/cc49d6f9-6fbd-4674-8d61-bf2bd2bafd6c" />
-<br>
-<img width="1282" height="875" alt="vm_install_025" src="https://github.com/user-attachments/assets/625e5dac-b844-47f2-9bf5-c398ce85297b" />
-<br>
-<img width="1282" height="875" alt="vm_install_026" src="https://github.com/user-attachments/assets/f9fa063b-c586-4feb-894d-202037798c4c" />
-<br>
-<img width="1282" height="875" alt="vm_install_027" src="https://github.com/user-attachments/assets/c9d9bec0-72db-49af-b26b-910a6c5dbab6" />
-<br>
-
-<img width="1282" height="875" alt="first_001" src="https://github.com/user-attachments/assets/d689a72b-ab34-4507-8903-7a47085e7bf8" />
-<br>
-<img width="1282" height="875" alt="first_002" src="https://github.com/user-attachments/assets/63301cbd-4991-40ca-a97d-229d2693244a" />
-<br>
-<img width="1282" height="875" alt="first_003" src="https://github.com/user-attachments/assets/d376b65a-fa0b-4ee3-952f-142366b7b966" />
-<br>
-<img width="1282" height="875" alt="first_004" src="https://github.com/user-attachments/assets/d65e7c84-59d1-48d7-90da-0f98b5b4300e" />
-<br>
-<img width="1282" height="875" alt="first_005" src="https://github.com/user-attachments/assets/6a3d19c0-c003-4c2f-88df-487674fa8ec6" />
-<br>
-<img width="1282" height="875" alt="first_006" src="https://github.com/user-attachments/assets/01283c9d-03eb-47fe-a980-adfc5f6374b0" />
-<br>
-<img width="1282" height="875" alt="first_007" src="https://github.com/user-attachments/assets/1b7a2e3a-0733-458a-901c-4a2c33d536a3" />
-<br>
-<img width="1282" height="875" alt="first_008" src="https://github.com/user-attachments/assets/0a427e0c-f1f3-4cd1-afad-10b336b17d91" />
-<br>
-<img width="1282" height="875" alt="first_009" src="https://github.com/user-attachments/assets/52cc1cb7-1c4a-4e3f-906b-fbfd2220142a" />
-<br>
-<img width="1282" height="875" alt="first_010" src="https://github.com/user-attachments/assets/821d5bc6-2bf2-4eaa-9d86-e84d23069249" />
-<br>
-
-</details>
-  
-### 공유 폴더 설정
-
-<details>
-<summary>🖼️ Share </summary>
-
-<img width="1255" height="669" alt="share_001" src="https://github.com/user-attachments/assets/fd4cee16-2a99-4b9d-b47d-63771a86a1f8" />
-<br>
-<img width="1255" height="669" alt="share_002" src="https://github.com/user-attachments/assets/dfc06d12-12a4-4a43-b2b8-2103162276fe" />
-<br>
-<img width="1255" height="669" alt="share_003" src="https://github.com/user-attachments/assets/90036537-6631-4a42-9d1d-13997d0b5725" />
-<br>
-<img width="537" height="175" alt="share_004" src="https://github.com/user-attachments/assets/e42c488d-73c4-4b47-bd48-3486eb3b65fe" />
-<br>
-<img width="813" height="478" alt="share_005" src="https://github.com/user-attachments/assets/27ae539e-5b5a-4754-80b9-a1d8fb3238b5" />
-<br>
-<img width="946" height="533" alt="share_006" src="https://github.com/user-attachments/assets/e9662cdf-c09c-4690-800a-ec7607b220bd" />
-<br>
-<img width="297" height="224" alt="share_007" src="https://github.com/user-attachments/assets/02bc1482-0452-4d6a-9cb0-97c18c607ae2" />
-<br>
-<img width="297" height="224" alt="share_008" src="https://github.com/user-attachments/assets/d997cec4-677a-478d-a21f-d20a69804168" />
-<br>
-<img width="813" height="478" alt="share_009" src="https://github.com/user-attachments/assets/a653a318-8522-44c3-a0c7-7f4fb43cd912" />
-<br>
-<img width="1255" height="669" alt="share_010" src="https://github.com/user-attachments/assets/5c085146-65c2-4170-bbee-a44530ebc88f" />
-<br>
-</details>
-
-### 1.3 VirtualBox Guest Additions 설치
-<details>
-<summary>🖼️ VirtualBox Guest Additions </summary>
-<img width="1280" height="800" alt="guest_001" src="https://github.com/user-attachments/assets/043eb593-7a9c-4e11-a9c9-0c4955c0d0bd" />
-<br>
-<img width="1282" height="875" alt="guest_002" src="https://github.com/user-attachments/assets/32dc630d-4b6d-4d8e-8bf5-653c54566f79" />
-<br>
-<img width="1282" height="875" alt="guest_003" src="https://github.com/user-attachments/assets/e9ba88d6-fafb-4feb-82f2-db085058f905" />
-<br>
-<img width="1282" height="875" alt="guest_004" src="https://github.com/user-attachments/assets/159d7da1-63b5-4fed-bdaf-f87ebae0e075" />
-<br>
-<img width="1282" height="875" alt="guest_005" src="https://github.com/user-attachments/assets/75de5b99-0a4d-446b-bada-21c25381f4e9" />
-<br>
-<img width="1282" height="875" alt="guest_006" src="https://github.com/user-attachments/assets/e3cd3255-a4d2-4ec0-a5a1-57a5c0cf7cc3" />
-<br>
-<img width="802" height="675" alt="guest_007" src="https://github.com/user-attachments/assets/513a8cc4-07eb-4fee-a151-2b1c50cc2a36" />
-<br>
-
-</details>
-
-### 1.4 공유 폴더 권한 설정
+ 
+### 5.1 공유 폴더 권한 설정
 
 ```bash
 # 사용자를 vboxsf 그룹에 추가
@@ -389,27 +225,6 @@ groups
 # 공유 폴더 확인
 ls -la /mnt/share
 ```
-
-<details>
-<summary>🖼️ share </summary>
-  
-<img width="1349" height="1035" alt="share_001" src="https://github.com/user-attachments/assets/66fe6c53-1506-49db-ae22-c4369bd91a7c" />
-<br>
-<img width="1349" height="1035" alt="share_002" src="https://github.com/user-attachments/assets/f814b814-1075-4a47-8caf-6bb15bf0cb2a" />
-<br>
-<img width="1349" height="1035" alt="share_003" src="https://github.com/user-attachments/assets/a762c007-8c69-4c76-82fd-dac133b6956b" />
-<br>
-<img width="1347" height="960" alt="share_004" src="https://github.com/user-attachments/assets/142e652c-9dbf-472f-87c2-cfddbf80c727" />
-<br>
-<img width="1347" height="960" alt="share_005" src="https://github.com/user-attachments/assets/0c41a0cf-af1b-4cec-a639-146b398018f4" />
-<br>
-<img width="1349" height="1035" alt="share_006" src="https://github.com/user-attachments/assets/daabe060-74b5-4279-90ce-174a93b03c73" />
-<br>
-<img width="1349" height="1035" alt="share_007" src="https://github.com/user-attachments/assets/ae3224f1-1f01-47e3-9785-656fab91ece2" />
-<br>
-<img width="1080" height="719" alt="share_008" src="https://github.com/user-attachments/assets/d5188656-5e37-49aa-9c50-ecbd175d182c" />
-<br>
-</details>
 
 ---
 
