@@ -2307,3 +2307,127 @@ echo "/dev/mmcblk0p3  /data  ext4  defaults  0  2" | sudo tee -a /etc/fstab
    * 프로덕션: 방법 1 (PetaLinux 설정) - 재현 가능하고 자동화됨
    * 데이터 저장용 별도 공간이 필요하면 방법 4로 추가 파티션을 생성하는 것이 파일시스템 관리 측면에서 더 깔끔합니다.재시도Claude는 실수를 할 수 있습니다. 응답을 반드시 다시 확인해 주세요.
 
+---
+=============================================================================
+
+* 인터넷 연결이 안 되는 경우, 몇 가지 방법으로 해결할 수 있습니다.
+
+### 방법 1: 수동 파티션 확장 (growpart 없이)
+가장 간단하고 추천하는 방법입니다!
+bash# 1. fdisk로 파티션 재생성
+root@myproject:~# fdisk /dev/mmcblk0
+
+Welcome to fdisk (util-linux 2.37.2).
+Changes will remain in memory only, until you decide to write them.
+Be careful before using the write command.
+
+Command (m for help): p           # 현재 파티션 확인
+Command (m for help): d           # 파티션 삭제
+Partition number (1,2, default 2): 2    # 파티션 2 삭제
+
+Command (m for help): n           # 새 파티션 생성
+Partition type
+   p   primary (1 primary, 0 extended, 3 free)
+   e   extended (container for logical partitions)
+Select (default p): p             # primary 선택
+
+Partition number (2-4, default 2): 2
+First sector (4194312-62333951, default 4194312): 4194312    # 반드시 기존 시작점!
+Last sector, +/-sectors or +/-size{K,M,G,T,P} (4194312-62333951, default 62333951): [Enter]
+                                                                                      # 끝까지
+
+Created a new partition 2 of type 'Linux' and of size 27.7 GiB.
+Partition #2 contains a ext4 signature.
+
+Do you want to remove the signature? [Y]es/[N]o: N    # 중요! N 입력 (기존 파일시스템 유지)
+
+Command (m for help): w           # 저장
+The partition table has been altered.
+Syncing disks.
+
+# 2. 시스템 재부팅 (파티션 테이블 갱신)
+root@myproject:~# reboot
+
+# 3. 재부팅 후 파일시스템 확장
+root@myproject:~# resize2fs /dev/mmcblk0p2
+
+# 4. 확인
+root@myproject:~# df -h
+⚠️ 주의사항:
+
+First sector는 반드시 4194312 (기존 시작점)
+"remove signature?" → 반드시 N (데이터 보존)
+시작점을 잘못 입력하면 데이터 손실!
+
+
+### 방법 2: PetaLinux 빌드에 cloud-utils 추가
+다음 빌드부터 미리 포함시켜두는 방법:
+bash# 개발 PC에서 PetaLinux 프로젝트 디렉토리로 이동
+cd /path/to/petalinux-project
+
+# rootfs 설정
+petalinux-config -c rootfs
+
+# 메뉴 탐색:
+# Filesystem Packages → 
+#   misc → 
+#     cloud-utils → [*] cloud-utils
+#                   [*] cloud-utils-growpart
+#   
+# base →
+#   e2fsprogs →
+#     [*] e2fsprogs-resize2fs
+
+# 저장 후 빌드
+petalinux-build
+
+### 방법 3: 호스트 PC에서 패키지 다운로드 후 전송
+bash# 호스트 PC (인터넷 연결된 Ubuntu)에서
+# 1. PetaLinux SDK 환경 설정
+source /tools/Xilinx/PetaLinux/2022.2/settings.sh
+
+# 2. 패키지 다운로드 (ARM용)
+# PetaLinux의 패키지 피드 URL 확인
+# http://petalinux.xilinx.com/sswreleases/rel-v2022/generic-updates/
+
+# 또는 직접 빌드
+cd /path/to/petalinux-project
+petalinux-build -c cloud-utils-growpart
+
+# 3. 생성된 .ipk 파일 찾기
+find build/tmp/deploy/ipk -name "*cloud-utils*"
+# 예: build/tmp/deploy/ipk/cortexa9t2hf-neon/cloud-utils-growpart_0.31_cortexa9t2hf-neon.ipk
+
+# 4. Zybo로 전송 (USB, scp, TFTP 등)
+# USB 사용 시:
+cp build/tmp/deploy/ipk/cortexa9t2hf-neon/cloud-utils-growpart*.ipk /media/usb/
+
+# 또는 scp (USB-Ethernet 어댑터로 직접 연결)
+scp cloud-utils-growpart*.ipk root@192.168.1.100:/tmp/
+Zybo에서 설치:
+bashroot@myproject:~# opkg install /tmp/cloud-utils-growpart*.ipk
+root@myproject:~# growpart /dev/mmcblk0 2
+root@myproject:~# resize2fs /dev/mmcblk0p2
+
+### 방법 4: 호스트 PC에서 SD 카드 직접 확장
+SD 카드를 PC에 연결해서 작업:
+bash# Ubuntu 호스트 PC에서
+sudo apt install cloud-utils parted
+
+# SD 카드 확인 (예: /dev/sdb)
+lsblk
+
+# 파티션 확장
+sudo growpart /dev/sdb 2
+sudo e2fsck -f /dev/sdb2      # 파일시스템 체크
+sudo resize2fs /dev/sdb2
+
+# SD 카드를 Zybo에 다시 삽입
+
+권장 순서
+지금 당장: 방법 1 (수동 fdisk) - growpart 없이 5분 내 완료
+다음 빌드: 방법 2 (cloud-utils 추가) - 향후 자동화
+긴급 시: 방법 4 (호스트 PC 작업) - 가장 안전
+방법 1의 fdisk 방식이 가장 간단하고 즉시 가능합니다. First sector만 정확히 입력하면 안전합니다!
+
+
