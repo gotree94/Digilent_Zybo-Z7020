@@ -2152,7 +2152,43 @@ petalinux-package --wic --images-dir images/linux/ --bootfiles "BOOT.BIN boot.sc
 ### 방법 2: 부팅 후 수동으로 파티션 확장
    * SD 카드를 이미 만든 경우, ZyboZ7에서 부팅 후 실행:
 
+   * 주의사항
 ```bash
+# growpart가 없다면 먼저 설치 필요
+# PetaLinux rootfs config에서 cloud-utils 패키지 추가하거나
+# 이미 만든 이미지라면:
+opkg update
+opkg install cloud-utils-growpart
+```
+
+```bash
+root@myproject:~# sudo fdisk -l /dev/mmcblk0
+Disk /dev/mmcblk0: 30 GB, 31914983424 bytes, 62333952 sectors
+486984 cylinders, 4 heads, 32 sectors/track
+Units: sectors of 1 * 512 = 512 bytes
+
+Device       Boot StartCHS    EndCHS        StartLBA     EndLBA    Sectors  Size Id Type
+/dev/mmcblk0p1 *  0,0,9       1023,3,32            8    4194311    4194304 2048M  c Win95 FAT32 (LBA)
+/dev/mmcblk0p2    1023,3,32   1023,3,32      4194312   12582919    8388608 4096M 83 Linux
+
+root@myproject:~# df -h
+Filesystem                Size      Used Available Use% Mounted on
+/dev/root                 3.8G    106.0M      3.5G   3% /
+devtmpfs                493.6M      4.0K    493.6M   0% /dev
+tmpfs                   502.1M    192.0K    501.9M   0% /run
+tmpfs                   502.1M     44.0K    502.1M   0% /var/volatile
+/dev/mmcblk0p1            2.0G      9.3M      2.0G   0% /boot
+```
+### growpart + resize2fs 동작 원리
+   * 1단계: growpart /dev/mmcblk0 2
+      * 파티션 테이블만 수정
+      * /dev/mmcblk0p2 파티션의 끝 지점을 SD 카드의 마지막까지 확장
+      * 파일시스템은 아직 작은 상태 (데이터 손실 없음)
+   * 2단계: resize2fs /dev/mmcblk0p2
+      * 확장된 파티션 크기에 맞춰 ext4 파일시스템을 확장
+      * 이제 실제로 전체 공간을 사용할 수 있게 됨
+
+```
 # 1. 파티션 확장 (rootfs가 /dev/mmcblk0p2라고 가정)
 sudo growpart /dev/mmcblk0 2
 
@@ -2162,6 +2198,72 @@ sudo resize2fs /dev/mmcblk0p2
 # 3. 확인
 df -h
 ```
+   * 실제 확인 과정
+```
+# 작업 전 확인
+root@myproject:~# df -h
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2  3.8G  1.2G  2.4G  34% /
+
+root@myproject:~# sudo lsblk
+NAME         MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+mmcblk0      179:0    0 29.7G  0 disk 
+├─mmcblk0p1  179:1    0  200M  0 part /boot
+└─mmcblk0p2  179:2    0  3.8G  0 part /     ← 작은 파티션
+
+# 1. 파티션 확장
+root@myproject:~# sudo growpart /dev/mmcblk0 2
+CHANGED: partition=2 start=411648 old: size=7999488 end=8411136 new: size=62062559 end=62474207
+
+# 파티션은 커졌지만 파일시스템은 아직 작음
+root@myproject:~# sudo lsblk
+NAME         MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+mmcblk0      179:0    0 29.7G  0 disk 
+├─mmcblk0p1  179:1    0  200M  0 part /boot
+└─mmcblk0p2  179:2    0 29.5G  0 part /     ← 파티션 크기만 커짐
+
+root@myproject:~# df -h
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2  3.8G  1.2G  2.4G  34% /     ← 파일시스템은 아직 작음!
+
+# 2. 파일시스템 확장
+root@myproject:~# sudo resize2fs /dev/mmcblk0p2
+resize2fs 1.46.5 (30-Dec-2021)
+Filesystem at /dev/mmcblk0p2 is mounted on /; on-line resizing required
+old_desc_blocks = 1, new_desc_blocks = 4
+The filesystem on /dev/mmcblk0p2 is now 7757819 (4k) blocks long.
+
+# 3. 확인 - 이제 전체 공간 사용 가능!
+root@myproject:~# df -h
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2   29G  1.2G   27G   5% /     ← 29.5GB 모두 사용 가능
+```
+
+## "rootfs를 전부 사용한다"의 의미
+
+### **이전 상태:**
+- **파티션 2 (mmcblk0p2)**: 4GB 할당
+- **미사용 영역**: 25.7GB (아무도 사용 못함)
+- rootfs는 4GB만 사용 가능
+
+### **작업 후:**
+```
+┌─────────────────────────────────────────────┐
+│          32GB MicroSD Card                  │
+├──────────┬──────────────────────────────────┤
+│ BOOT     │       rootfs (/)                 │
+│ (200MB)  │       (29.7GB)                   │
+│ FAT32    │       ext4                       │
+└──────────┴──────────────────────────────────┘
+
+```
+   * 파티션 2: SD 카드의 나머지 전체 공간 사용 (29.7GB)
+   * 미사용 영역: 0GB
+   * rootfs가 거의 전체 SD 카드를 사용 가능
+
+
+
+
 
    * 필요한 패키지 추가 (PetaLinux 빌드 시):
 ```bash
