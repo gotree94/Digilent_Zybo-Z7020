@@ -2108,3 +2108,100 @@ package-management 체크 (패키지 설치 필요 시).
 
 원하는 root 비밀번호를 입력하고 저장합니다.
 
+---
+
+====================================================================================
+
+# PetaLinux 2022.2로 생성된 SD 카드의 파티션 구조와 확장 방법
+
+## 파티션 구조 분석
+ * PetaLinux가 생성하는 기본 SD 카드 이미지는 다음과 같이 구성됩니다:
+
+## 1. BOOT 파티션 (FAT32, ~2GB)
+  * BOOT.BIN: FSBL + U-Boot + PMU firmware + bitstream
+  * image.ub: Kernel + Device Tree + RootFS (FIT 이미지)
+  * boot.scr: U-Boot 스크립트
+
+## 2. rootfs 파티션 (ext4, ~4GB)
+  * 실제 Linux 루트 파일시스템
+  * 기본 크기는 PetaLinux 설정의 IMAGE_ROOTFS_EXTRA_SPACE에 의해 결정
+
+## 3. 미할당 영역 (~23.72GB)
+  * SD 카드의 나머지 공간은 기본적으로 할당되지 않음
+
+  * 이 구조는 project-spec/meta-user/recipes-core/images/*.bb 파일과 WKS (Wic Kickstart) 파일에서 정의됩니다.
+
+## 사용 가능한 영역 확장 방법
+### 방법 1: PetaLinux 빌드 시 rootfs 크기 확장 (권장)
+  * project-spec/meta-user/conf/petalinuxbsb.conf 파일에 추가:
+```bash
+# rootfs 파티션 크기를 28GB로 확장
+IMAGE_ROOTFS_EXTRA_SPACE = "28000000"
+
+# 또는 비율로 지정
+IMAGE_ROOTFS_EXTRA_SPACE_append = " + 25000000"
+```
+
+   * 그 후 이미지 재빌드:
+```bash
+petalinux-build
+petalinux-package --boot --fsbl images/linux/zynq_fsbl.elf --fpga images/linux/system.bit --u-boot --force
+petalinux-package --wic --images-dir images/linux/ --bootfiles "BOOT.BIN boot.scr image.ub"
+```
+
+### 방법 2: 부팅 후 수동으로 파티션 확장
+   * SD 카드를 이미 만든 경우, ZyboZ7에서 부팅 후 실행:
+
+```bash
+# 1. 파티션 확장 (rootfs가 /dev/mmcblk0p2라고 가정)
+sudo growpart /dev/mmcblk0 2
+
+# 2. 파일시스템 리사이즈
+sudo resize2fs /dev/mmcblk0p2
+
+# 3. 확인
+df -h
+```
+
+   * 필요한 패키지 추가 (PetaLinux 빌드 시):
+```bash
+petalinux-config -c rootfs
+```
+   → Filesystem Packages → base → cloud-utils 및 e2fsprogs-resize2fs 선택
+
+### 방법 3: WKS 파일 수정 (고급)
+   * project-spec/meta-user/wic/ 디렉토리에 커스텀 WKS 파일 생성:
+```wks
+# sdimage-custom.wks
+part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 200M
+part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label root --align 4096 --size 28G
+```
+   * local.conf에 추가:
+```bash
+WKS_FILE = "sdimage-custom.wks"
+```
+
+### 방법 4: 추가 파티션 생성
+   * 부팅 후 미할당 영역에 새 파티션 생성:
+```bash
+# fdisk로 새 파티션 생성
+sudo fdisk /dev/mmcblk0
+# n (새 파티션), p (primary), 3 (파티션 번호), 기본값, 기본값
+# w (저장)
+
+# 파일시스템 포맷
+sudo mkfs.ext4 /dev/mmcblk0p3
+
+# 마운트
+sudo mkdir /data
+sudo mount /dev/mmcblk0p3 /data
+
+# 부팅 시 자동 마운트 (/etc/fstab에 추가)
+echo "/dev/mmcblk0p3  /data  ext4  defaults  0  2" | sudo tee -a /etc/fstab
+```
+
+## 권장 접근법
+   * 개발 단계: 방법 2 (부팅 후 수동 확장) - 빠르고 간단
+   * 프로덕션: 방법 1 (PetaLinux 설정) - 재현 가능하고 자동화됨
+   * 데이터 저장용 별도 공간이 필요하면 방법 4로 추가 파티션을 생성하는 것이 파일시스템 관리 측면에서 더 깔끔합니다.재시도Claude는 실수를 할 수 있습니다. 응답을 반드시 다시 확인해 주세요.
+
