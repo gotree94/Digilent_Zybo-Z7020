@@ -171,7 +171,7 @@ module debounce #(
     input  wire din,
     output reg  dout
 );
-    localparam integer CNT_MAX = (CLK_HZ/1000)*MS;
+    localparam integer CNT_MAX = (CLK_HZ/1250)*MS;
     reg din_q1, din_q2;
     reg [31:0] cnt;
 
