@@ -1,188 +1,377 @@
-# 🧠 Bilateral Filter Pack — C / Python / Verilog (1995) + Testbench
+# Zybo_StepMotor
 
-엣지를 보존하면서 노이즈를 효과적으로 제거하는 **Bilateral Filter**의 C, Python, Verilog(1995, ModelSim 10.1 호환) 구현입니다.  
-MRI / CT 영상의 전처리용으로 **입력 영상의 노이즈 레벨을 분석하여 자동으로 LUT를 최적화**하도록 설계되었습니다.
+```verilog
+// zybo_z720_stepper_top.v
+`timescale 1ns/1ps
+`default_nettype none
 
----
+module zybo_z720_stepper_top #(
+    parameter integer CLK_HZ        = 125_000_000, 
+    parameter integer STEPS_PER_SEC = 600,         // 초당 스텝 수(half-step 기준). 28BYJ-48은 200~600 정도 무난
+    parameter         HALF_STEP     = 1            // 1: half-step(8패턴), 0: full-step(4패턴)
+)(
+    input  wire clk,         // 보드 클럭
+    input  wire rst_n,       // Active-Low Reset
+    input  wire sw_run,      // RUN/STOP 스위치 (1=RUN, 0=STOP)
+    input  wire sw_dir,      // 1=Forward, 0=Backward
+    output wire [3:0] coils  // ULN2003 IN1..IN4 로 연결 (논리 '1'이면 해당 코일 ON)
+);
 
-## 📘 1. 알고리즘 개요
+    // -------- 스위치 동기화/디바운스 --------
+    wire run_clean, dir_clean;
 
-출력 픽셀은 다음 식으로 계산됩니다:
+    debounce #(
+        .CLK_HZ(CLK_HZ),
+        .MS(10)             // 10ms 디바운스
+    ) u_db_run (
+        .clk(clk), .rst_n(rst_n),
+        .din(sw_run),
+        .dout(run_clean)
+    );
 
-\[
-I_{out}(x,y) = \frac{\sum w_s(x,y) \cdot w_r(|I - I_{center}|) \cdot I}{\sum w_s(x,y) \cdot w_r(|I - I_{center}|)}
-\]
+    debounce #(
+        .CLK_HZ(CLK_HZ),
+        .MS(10)
+    ) u_db_dir (
+        .clk(clk), .rst_n(rst_n),
+        .din(sw_dir),
+        .dout(dir_clean)
+    );
 
-| 구성 요소 | 설명 |
-|------------|------|
-| **공간 가중치(Spatial)** | 5×5 정수형 커널<br>중심 41, 축 ±1=26, ±2=7, 대각=16, 기사=4, 코너=1 |
-| **범위 가중치(Range)** | `range_lut_256.mem`에서 조회 (0~255)<br>→ `exp(-d² / 2σᵣ²)` 기반 정수화 |
-| **σᵣ 선택 기준** | σᵣ = clamp(1.5×σₙ, 8, 40)<br>σₙ: 입력 이미지(`brainct_001.bmp`)의 노이즈 추정값(MAD 기반) |
-| **경계 처리** | Replicate Padding |
-| **정수 연산 구조** | `sum_w`, `sum_wr` 누적 후 나눗셈 → 8bit clip |
+    // -------- 스텝 타이머 --------
+    localparam integer TICKS_PER_STEP = (CLK_HZ / STEPS_PER_SEC);
+    reg [31:0] tick_cnt;
+    wire step_pulse = (tick_cnt == 0);
 
----
+    always @(posedge clk or posedge rst_n) begin
+        if (rst_n) begin
+            tick_cnt <= TICKS_PER_STEP - 1;
+        end else if (run_clean) begin
+            tick_cnt <= (tick_cnt == 0) ? (TICKS_PER_STEP - 1) : (tick_cnt - 1);
+        end else begin
+            tick_cnt <= TICKS_PER_STEP - 1; // STOP 상태에선 주기 카운터 정지/유지
+        end
+    end
 
-## 🧩 2. 폴더 구성
+    // -------- 스텝 인덱스 (0..7 half-step) --------
+    localparam integer MAX_IDX = (HALF_STEP ? 7 : 3);
+    reg [2:0] step_idx; // 충분한 비트 폭
+
+    always @(posedge clk or posedge rst_n) begin
+        if (rst_n) begin
+            step_idx <= 0;
+        end else if (run_clean && step_pulse) begin
+            if (dir_clean) begin
+                // Forward
+                if (step_idx == MAX_IDX) step_idx <= 0;
+                else                     step_idx <= step_idx + 1'b1;
+            end else begin
+                // Backward
+                if (step_idx == 0)       step_idx <= MAX_IDX[2:0];
+                else                     step_idx <= step_idx - 1'b1;
+            end
+        end
+    end
+
+    // -------- 시퀀스 ROM: 28BYJ-48 권장 패턴 --------
+    // 코일 순서: [A,B,C,D] = [3,2,1,0] 비트로 가정. ULN2003 IN1=A, IN2=B, IN3=C, IN4=D 에 맞춰 배선하세요.
+    reg [3:0] patt;
+
+    always @(*) begin
+        if (HALF_STEP) begin
+            // Half-step (8-step) : A, A+B, B, B+C, C, C+D, D, D+A
+            case (step_idx)
+                3'd0: patt = 4'b1000; // A
+                3'd1: patt = 4'b1100; // A+B
+                3'd2: patt = 4'b0100; // B
+                3'd3: patt = 4'b0110; // B+C
+                3'd4: patt = 4'b0010; // C
+                3'd5: patt = 4'b0011; // C+D
+                3'd6: patt = 4'b0001; // D
+                3'd7: patt = 4'b1001; // D+A
+                default: patt = 4'b0000;
+            endcase
+        end else begin
+            // Full-step (4-step) : A+B, B+C, C+D, D+A
+            case (step_idx[1:0])
+                2'd0: patt = 4'b1100; // A+B
+                2'd1: patt = 4'b0110; // B+C
+                2'd2: patt = 4'b0011; // C+D
+                2'd3: patt = 4'b1001; // D+A
+                default: patt = 4'b0000;
+            endcase
+        end
+    end
+
+    assign coils = run_clean ? patt : 4'b0000; // STOP 시 모든 코일 OFF
+
+endmodule
+
+// ---------------------- 디바운스 모듈 ----------------------
+module debounce #(
+    parameter integer CLK_HZ = 100_000_000,
+    parameter integer MS     = 10
+)(
+    input  wire clk,
+    input  wire rst_n,
+    input  wire din,
+    output reg  dout
+);
+    localparam integer CNT_MAX = (CLK_HZ/1000)*MS;
+    reg din_q1, din_q2;
+    reg [31:0] cnt;
+
+    // 2FF 동기화
+    always @(posedge clk or posedge rst_n) begin
+        if (rst_n) begin
+            din_q1 <= 1'b0;
+            din_q2 <= 1'b0;
+        end else begin
+            din_q1 <= din;
+            din_q2 <= din_q1;
+        end
+    end
+
+    // 안정 시간 카운트
+    always @(posedge clk or posedge rst_n) begin
+        if (rst_n) begin
+            cnt  <= 0;
+            dout <= 0;
+        end else if (din_q2 == dout) begin
+            cnt <= 0; // 상태 유지
+        end else begin
+            if (cnt >= CNT_MAX) begin
+                dout <= din_q2; // 충분히 유지되면 상태 갱신
+                cnt  <= 0;
+            end else begin
+                cnt <= cnt + 1;
+            end
+        end
+    end
+endmodule
+
+`default_nettype wire
 
 ```
-bilateral_pack/
-│
-├─ bilateral.c                # C 구현
-├─ bilateral.py               # Python 구현
-├─ verilog/
-│   ├─ bilateral_frame.v      # Verilog-1995 본체 (ModelSim 10.1 호환)
-│   ├─ bilateral_tb.v         # Testbench (상대경로 ../..)
-│   └─ common/
-│       └─ range_lut_256.mem  # 범위 LUT (자동 생성)
-│
-├─ brainct_001.bmp            # 예시 입력 영상 (MRI/CT)
-├─ range_lut_256_meta.json    # LUT 생성 시 파라미터 정보
-├─ compare_results.py         # 결과 비교 유틸리티
-└─ compare_gui.py             # 시각적 비교 GUI (BMP 비교)
+
+```xdc
+### Clock (수정 필수: 실제 보드의 sys_clk 핀/주파수에 맞추세요)
+#set_property -dict { PACKAGE_PIN Y9   IOSTANDARD LVCMOS33 } [get_ports clk]
+#create_clock -add -name sys_clk_pin -period 8.0 [get_ports clk] ; # 125MHz라면 8ns, 100MHz면 10ns
+
+### Reset (푸시버튼 또는 외부 핀)
+#set_property -dict { PACKAGE_PIN T18  IOSTANDARD LVCMOS33 PULLUP true } [get_ports rst_n]
+
+### RUN/STOP 스위치 (보드의 DIP 스위치 중 하나)
+#set_property -dict { PACKAGE_PIN G15  IOSTANDARD LVCMOS33 PULLUP true } [get_ports sw_run]
+
+### DIR 스위치
+#set_property -dict { PACKAGE_PIN P15  IOSTANDARD LVCMOS33 PULLUP true } [get_ports sw_dir]
+
+### Coils → ULN2003 IN1..IN4
+## 예: PMOD JD 핀 예시 (반드시 보드 핀맵 확인!)
+#set_property -dict { PACKAGE_PIN W19 IOSTANDARD LVCMOS33 DRIVE 8 SLEW SLOW } [get_ports {coils[0]}] ; # D
+#set_property -dict { PACKAGE_PIN W20 IOSTANDARD LVCMOS33 DRIVE 8 SLEW SLOW } [get_ports {coils[1]}] ; # C
+#set_property -dict { PACKAGE_PIN U19 IOSTANDARD LVCMOS33 DRIVE 8 SLEW SLOW } [get_ports {coils[2]}] ; # B
+#set_property -dict { PACKAGE_PIN U20 IOSTANDARD LVCMOS33 DRIVE 8 SLEW SLOW } [get_ports {coils[3]}] ; # A
+
+
+## This file is a general .xdc for the Zybo Z7 Rev. B
+## It is compatible with the Zybo Z7-20 and Zybo Z7-10
+## To use it in a project:
+## - uncomment the lines corresponding to used pins
+## - rename the used ports (in each line, after get_ports) according to the top level signal names in the project
+
+##Clock signal
+set_property -dict { PACKAGE_PIN K17   IOSTANDARD LVCMOS33 } [get_ports { clk }]; #IO_L12P_T1_MRCC_35 Sch=sysclk
+create_clock -add -name sys_clk_pin -period 8.00 -waveform {0 4} [get_ports { clk }];
+
+
+##Switches
+set_property -dict { PACKAGE_PIN G15   IOSTANDARD LVCMOS33 } [get_ports { sw_run }]; #IO_L19N_T3_VREF_35 Sch=sw[0]
+set_property -dict { PACKAGE_PIN P15   IOSTANDARD LVCMOS33 } [get_ports { sw_dir }]; #IO_L24P_T3_34 Sch=sw[1]
+#set_property -dict { PACKAGE_PIN W13   IOSTANDARD LVCMOS33 } [get_ports { sw[2] }]; #IO_L4N_T0_34 Sch=sw[2]
+set_property -dict { PACKAGE_PIN T16   IOSTANDARD LVCMOS33 } [get_ports { rst_n }]; #IO_L9P_T1_DQS_34 Sch=sw[3]
+
+
+##Buttons
+#set_property -dict { PACKAGE_PIN K18   IOSTANDARD LVCMOS33 } [get_ports { btn[] }]; #IO_L12N_T1_MRCC_35 Sch=btn[0]
+#set_property -dict { PACKAGE_PIN P16   IOSTANDARD LVCMOS33 } [get_ports { btn[1] }]; #IO_L24N_T3_34 Sch=btn[1]
+#set_property -dict { PACKAGE_PIN K19   IOSTANDARD LVCMOS33 } [get_ports { btn[2] }]; #IO_L10P_T1_AD11P_35 Sch=btn[2]
+#set_property -dict { PACKAGE_PIN Y16   IOSTANDARD LVCMOS33 } [get_ports { btn[3] }]; #IO_L7P_T1_34 Sch=btn[3]
+
+
+##LEDs
+#set_property -dict { PACKAGE_PIN M14   IOSTANDARD LVCMOS33 } [get_ports { led[0] }]; #IO_L23P_T3_35 Sch=led[0]
+#set_property -dict { PACKAGE_PIN M15   IOSTANDARD LVCMOS33 } [get_ports { led[1] }]; #IO_L23N_T3_35 Sch=led[1]
+#set_property -dict { PACKAGE_PIN G14   IOSTANDARD LVCMOS33 } [get_ports { led[2] }]; #IO_0_35 Sch=led[2]
+#set_property -dict { PACKAGE_PIN D18   IOSTANDARD LVCMOS33 } [get_ports { led[3] }]; #IO_L3N_T0_DQS_AD1N_35 Sch=led[3]
+
+
+##RGB LED 5 (Zybo Z7-20 only)
+#set_property -dict { PACKAGE_PIN Y11   IOSTANDARD LVCMOS33 } [get_ports { led5_r }]; #IO_L18N_T2_13 Sch=led5_r
+#set_property -dict { PACKAGE_PIN T5    IOSTANDARD LVCMOS33 } [get_ports { led5_g }]; #IO_L19P_T3_13 Sch=led5_g
+#set_property -dict { PACKAGE_PIN Y12   IOSTANDARD LVCMOS33 } [get_ports { led5_b }]; #IO_L20P_T3_13 Sch=led5_b
+
+##RGB LED 6
+#set_property -dict { PACKAGE_PIN V16   IOSTANDARD LVCMOS33 } [get_ports { led6_r }]; #IO_L18P_T2_34 Sch=led6_r
+#set_property -dict { PACKAGE_PIN F17   IOSTANDARD LVCMOS33 } [get_ports { led6_g }]; #IO_L6N_T0_VREF_35 Sch=led6_g
+#set_property -dict { PACKAGE_PIN M17   IOSTANDARD LVCMOS33 } [get_ports { led6_b }]; #IO_L8P_T1_AD10P_35 Sch=led6_b
+
+
+##Audio Codec
+#set_property -dict { PACKAGE_PIN R19   IOSTANDARD LVCMOS33 } [get_ports { ac_bclk }]; #IO_0_34 Sch=ac_bclk
+#set_property -dict { PACKAGE_PIN R17   IOSTANDARD LVCMOS33 } [get_ports { ac_mclk }]; #IO_L19N_T3_VREF_34 Sch=ac_mclk
+#set_property -dict { PACKAGE_PIN P18   IOSTANDARD LVCMOS33 } [get_ports { ac_muten }]; #IO_L23N_T3_34 Sch=ac_muten
+#set_property -dict { PACKAGE_PIN R18   IOSTANDARD LVCMOS33 } [get_ports { ac_pbdat }]; #IO_L20N_T3_34 Sch=ac_pbdat
+#set_property -dict { PACKAGE_PIN T19   IOSTANDARD LVCMOS33 } [get_ports { ac_pblrc }]; #IO_25_34 Sch=ac_pblrc
+#set_property -dict { PACKAGE_PIN R16   IOSTANDARD LVCMOS33 } [get_ports { ac_recdat }]; #IO_L19P_T3_34 Sch=ac_recdat
+#set_property -dict { PACKAGE_PIN Y18   IOSTANDARD LVCMOS33 } [get_ports { ac_reclrc }]; #IO_L17P_T2_34 Sch=ac_reclrc
+#set_property -dict { PACKAGE_PIN N18   IOSTANDARD LVCMOS33 } [get_ports { ac_scl }]; #IO_L13P_T2_MRCC_34 Sch=ac_scl
+#set_property -dict { PACKAGE_PIN N17   IOSTANDARD LVCMOS33 } [get_ports { ac_sda }]; #IO_L23P_T3_34 Sch=ac_sda
+ 
+ 
+##Additional Ethernet signals
+#set_property -dict { PACKAGE_PIN F16   IOSTANDARD LVCMOS33  PULLUP true    } [get_ports { eth_int_pu_b }]; #IO_L6P_T0_35 Sch=eth_int_pu_b
+#set_property -dict { PACKAGE_PIN E17   IOSTANDARD LVCMOS33 } [get_ports { eth_rst_b }]; #IO_L3P_T0_DQS_AD1P_35 Sch=eth_rst_b
+
+
+##USB-OTG over-current detect pin
+#set_property -dict { PACKAGE_PIN U13   IOSTANDARD LVCMOS33 } [get_ports { otg_oc }]; #IO_L3P_T0_DQS_PUDC_B_34 Sch=otg_oc
+
+
+##Fan (Zybo Z7-20 only)
+#set_property -dict { PACKAGE_PIN Y13   IOSTANDARD LVCMOS33  PULLUP true    } [get_ports { fan_fb_pu }]; #IO_L20N_T3_13 Sch=fan_fb_pu
+
+
+##HDMI RX
+#set_property -dict { PACKAGE_PIN W19   IOSTANDARD LVCMOS33 } [get_ports { hdmi_rx_hpd }]; #IO_L22N_T3_34 Sch=hdmi_rx_hpd
+#set_property -dict { PACKAGE_PIN W18   IOSTANDARD LVCMOS33 } [get_ports { hdmi_rx_scl }]; #IO_L22P_T3_34 Sch=hdmi_rx_scl
+#set_property -dict { PACKAGE_PIN Y19   IOSTANDARD LVCMOS33 } [get_ports { hdmi_rx_sda }]; #IO_L17N_T2_34 Sch=hdmi_rx_sda
+#set_property -dict { PACKAGE_PIN U19   IOSTANDARD TMDS_33     } [get_ports { hdmi_rx_clk_n }]; #IO_L12N_T1_MRCC_34 Sch=hdmi_rx_clk_n
+#set_property -dict { PACKAGE_PIN U18   IOSTANDARD TMDS_33     } [get_ports { hdmi_rx_clk_p }]; #IO_L12P_T1_MRCC_34 Sch=hdmi_rx_clk_p
+#set_property -dict { PACKAGE_PIN W20   IOSTANDARD TMDS_33     } [get_ports { hdmi_rx_n[0] }]; #IO_L16N_T2_34 Sch=hdmi_rx_n[0]
+#set_property -dict { PACKAGE_PIN V20   IOSTANDARD TMDS_33     } [get_ports { hdmi_rx_p[0] }]; #IO_L16P_T2_34 Sch=hdmi_rx_p[0]
+#set_property -dict { PACKAGE_PIN U20   IOSTANDARD TMDS_33     } [get_ports { hdmi_rx_n[1] }]; #IO_L15N_T2_DQS_34 Sch=hdmi_rx_n[1]
+#set_property -dict { PACKAGE_PIN T20   IOSTANDARD TMDS_33     } [get_ports { hdmi_rx_p[1] }]; #IO_L15P_T2_DQS_34 Sch=hdmi_rx_p[1]
+#set_property -dict { PACKAGE_PIN P20   IOSTANDARD TMDS_33     } [get_ports { hdmi_rx_n[2] }]; #IO_L14N_T2_SRCC_34 Sch=hdmi_rx_n[2]
+#set_property -dict { PACKAGE_PIN N20   IOSTANDARD TMDS_33     } [get_ports { hdmi_rx_p[2] }]; #IO_L14P_T2_SRCC_34 Sch=hdmi_rx_p[2]
+
+##HDMI RX CEC (Zybo Z7-20 only)
+#set_property -dict { PACKAGE_PIN Y8    IOSTANDARD LVCMOS33 } [get_ports { hdmi_rx_cec }]; #IO_L14N_T2_SRCC_13 Sch=hdmi_rx_cec
+
+
+##HDMI TX
+#set_property -dict { PACKAGE_PIN E18   IOSTANDARD LVCMOS33 } [get_ports { hdmi_tx_hpd }]; #IO_L5P_T0_AD9P_35 Sch=hdmi_tx_hpd
+#set_property -dict { PACKAGE_PIN G17   IOSTANDARD LVCMOS33 } [get_ports { hdmi_tx_scl }]; #IO_L16P_T2_35 Sch=hdmi_tx_scl
+#set_property -dict { PACKAGE_PIN G18   IOSTANDARD LVCMOS33 } [get_ports { hdmi_tx_sda }]; #IO_L16N_T2_35 Sch=hdmi_tx_sda
+#set_property -dict { PACKAGE_PIN H17   IOSTANDARD TMDS_33     } [get_ports { hdmi_tx_clk_n }]; #IO_L13N_T2_MRCC_35 Sch=hdmi_tx_clk_n
+#set_property -dict { PACKAGE_PIN H16   IOSTANDARD TMDS_33     } [get_ports { hdmi_tx_clk_p }]; #IO_L13P_T2_MRCC_35 Sch=hdmi_tx_clk_p
+#set_property -dict { PACKAGE_PIN D20   IOSTANDARD TMDS_33     } [get_ports { hdmi_tx_n[0] }]; #IO_L4N_T0_35 Sch=hdmi_tx_n[0]
+#set_property -dict { PACKAGE_PIN D19   IOSTANDARD TMDS_33     } [get_ports { hdmi_tx_p[0] }]; #IO_L4P_T0_35 Sch=hdmi_tx_p[0]
+#set_property -dict { PACKAGE_PIN B20   IOSTANDARD TMDS_33     } [get_ports { hdmi_tx_n[1] }]; #IO_L1N_T0_AD0N_35 Sch=hdmi_tx_n[1]
+#set_property -dict { PACKAGE_PIN C20   IOSTANDARD TMDS_33     } [get_ports { hdmi_tx_p[1] }]; #IO_L1P_T0_AD0P_35 Sch=hdmi_tx_p[1]
+#set_property -dict { PACKAGE_PIN A20   IOSTANDARD TMDS_33     } [get_ports { hdmi_tx_n[2] }]; #IO_L2N_T0_AD8N_35 Sch=hdmi_tx_n[2]
+#set_property -dict { PACKAGE_PIN B19   IOSTANDARD TMDS_33     } [get_ports { hdmi_tx_p[2] }]; #IO_L2P_T0_AD8P_35 Sch=hdmi_tx_p[2]
+
+##HDMI TX CEC 
+#set_property -dict { PACKAGE_PIN E19   IOSTANDARD LVCMOS33 } [get_ports { hdmi_tx_cec }]; #IO_L5N_T0_AD9N_35 Sch=hdmi_tx_cec
+ 
+
+##Pmod Header JA (XADC)
+#set_property -dict { PACKAGE_PIN N15   IOSTANDARD LVCMOS33 } [get_ports { ja[0] }]; #IO_L21P_T3_DQS_AD14P_35 Sch=JA1_R_p		   
+#set_property -dict { PACKAGE_PIN L14   IOSTANDARD LVCMOS33 } [get_ports { ja[1] }]; #IO_L22P_T3_AD7P_35 Sch=JA2_R_P             
+#set_property -dict { PACKAGE_PIN K16   IOSTANDARD LVCMOS33 } [get_ports { ja[2] }]; #IO_L24P_T3_AD15P_35 Sch=JA3_R_P            
+#set_property -dict { PACKAGE_PIN K14   IOSTANDARD LVCMOS33 } [get_ports { ja[3] }]; #IO_L20P_T3_AD6P_35 Sch=JA4_R_P             
+#set_property -dict { PACKAGE_PIN N16   IOSTANDARD LVCMOS33 } [get_ports { ja[4] }]; #IO_L21N_T3_DQS_AD14N_35 Sch=JA1_R_N        
+#set_property -dict { PACKAGE_PIN L15   IOSTANDARD LVCMOS33 } [get_ports { ja[5] }]; #IO_L22N_T3_AD7N_35 Sch=JA2_R_N             
+#set_property -dict { PACKAGE_PIN J16   IOSTANDARD LVCMOS33 } [get_ports { ja[6] }]; #IO_L24N_T3_AD15N_35 Sch=JA3_R_N            
+#set_property -dict { PACKAGE_PIN J14   IOSTANDARD LVCMOS33 } [get_ports { ja[7] }]; #IO_L20N_T3_AD6N_35 Sch=JA4_R_N             
+ 
+
+##Pmod Header JB (Zybo Z7-20 only)
+#set_property -dict { PACKAGE_PIN V8    IOSTANDARD LVCMOS33     } [get_ports { jb[0] }]; #IO_L15P_T2_DQS_13 Sch=jb_p[1]		 
+#set_property -dict { PACKAGE_PIN W8    IOSTANDARD LVCMOS33     } [get_ports { jb[1] }]; #IO_L15N_T2_DQS_13 Sch=jb_n[1]         
+#set_property -dict { PACKAGE_PIN U7    IOSTANDARD LVCMOS33     } [get_ports { jb[2] }]; #IO_L11P_T1_SRCC_13 Sch=jb_p[2]        
+#set_property -dict { PACKAGE_PIN V7    IOSTANDARD LVCMOS33     } [get_ports { jb[3] }]; #IO_L11N_T1_SRCC_13 Sch=jb_n[2]        
+#set_property -dict { PACKAGE_PIN Y7    IOSTANDARD LVCMOS33     } [get_ports { jb[4] }]; #IO_L13P_T2_MRCC_13 Sch=jb_p[3]        
+#set_property -dict { PACKAGE_PIN Y6    IOSTANDARD LVCMOS33     } [get_ports { jb[5] }]; #IO_L13N_T2_MRCC_13 Sch=jb_n[3]        
+#set_property -dict { PACKAGE_PIN V6    IOSTANDARD LVCMOS33     } [get_ports { jb[6] }]; #IO_L22P_T3_13 Sch=jb_p[4]             
+#set_property -dict { PACKAGE_PIN W6    IOSTANDARD LVCMOS33     } [get_ports { jb[7] }]; #IO_L22N_T3_13 Sch=jb_n[4]             
+                                                                                                                                 
+                                                                                                                                 
+##Pmod Header JC                                                                                                                  
+#set_property -dict { PACKAGE_PIN V15   IOSTANDARD LVCMOS33     } [get_ports { jc[0] }]; #IO_L10P_T1_34 Sch=jc_p[1]   			 
+#set_property -dict { PACKAGE_PIN W15   IOSTANDARD LVCMOS33     } [get_ports { jc[1] }]; #IO_L10N_T1_34 Sch=jc_n[1]		     
+#set_property -dict { PACKAGE_PIN T11   IOSTANDARD LVCMOS33     } [get_ports { jc[2] }]; #IO_L1P_T0_34 Sch=jc_p[2]              
+#set_property -dict { PACKAGE_PIN T10   IOSTANDARD LVCMOS33     } [get_ports { jc[3] }]; #IO_L1N_T0_34 Sch=jc_n[2]              
+#set_property -dict { PACKAGE_PIN W14   IOSTANDARD LVCMOS33     } [get_ports { jc[4] }]; #IO_L8P_T1_34 Sch=jc_p[3]              
+#set_property -dict { PACKAGE_PIN Y14   IOSTANDARD LVCMOS33     } [get_ports { jc[5] }]; #IO_L8N_T1_34 Sch=jc_n[3]              
+#set_property -dict { PACKAGE_PIN T12   IOSTANDARD LVCMOS33     } [get_ports { jc[6] }]; #IO_L2P_T0_34 Sch=jc_p[4]              
+#set_property -dict { PACKAGE_PIN U12   IOSTANDARD LVCMOS33     } [get_ports { jc[7] }]; #IO_L2N_T0_34 Sch=jc_n[4]              
+                                                                                                                                 
+                                                                                                                                 
+##Pmod Header JD                                                                                                                  
+#set_property -dict { PACKAGE_PIN T14   IOSTANDARD LVCMOS33     } [get_ports { jd[0] }]; #IO_L5P_T0_34 Sch=jd_p[1]                  
+#set_property -dict { PACKAGE_PIN T15   IOSTANDARD LVCMOS33     } [get_ports { jd[1] }]; #IO_L5N_T0_34 Sch=jd_n[1]				 
+#set_property -dict { PACKAGE_PIN P14   IOSTANDARD LVCMOS33     } [get_ports { jd[2] }]; #IO_L6P_T0_34 Sch=jd_p[2]                  
+#set_property -dict { PACKAGE_PIN R14   IOSTANDARD LVCMOS33     } [get_ports { jd[3] }]; #IO_L6N_T0_VREF_34 Sch=jd_n[2]             
+#set_property -dict { PACKAGE_PIN U14   IOSTANDARD LVCMOS33     } [get_ports { jd[4] }]; #IO_L11P_T1_SRCC_34 Sch=jd_p[3]            
+#set_property -dict { PACKAGE_PIN U15   IOSTANDARD LVCMOS33     } [get_ports { jd[5] }]; #IO_L11N_T1_SRCC_34 Sch=jd_n[3]            
+#set_property -dict { PACKAGE_PIN V17   IOSTANDARD LVCMOS33     } [get_ports { jd[6] }]; #IO_L21P_T3_DQS_34 Sch=jd_p[4]             
+#set_property -dict { PACKAGE_PIN V18   IOSTANDARD LVCMOS33     } [get_ports { jd[7] }]; #IO_L21N_T3_DQS_34 Sch=jd_n[4]             
+                                                                                                                                 
+                                                                                                                                 
+##Pmod Header JE                                                                                                                  
+set_property -dict { PACKAGE_PIN V12   IOSTANDARD LVCMOS33 } [get_ports { coils[0] }]; #IO_L4P_T0_34 Sch=je[1]						 
+set_property -dict { PACKAGE_PIN W16   IOSTANDARD LVCMOS33 } [get_ports { coils[1] }]; #IO_L18N_T2_34 Sch=je[2]                     
+set_property -dict { PACKAGE_PIN J15   IOSTANDARD LVCMOS33 } [get_ports { coils[2] }]; #IO_25_35 Sch=je[3]                          
+set_property -dict { PACKAGE_PIN H15   IOSTANDARD LVCMOS33 } [get_ports { coils[3] }]; #IO_L19P_T3_35 Sch=je[4]                     
+#set_property -dict { PACKAGE_PIN V13   IOSTANDARD LVCMOS33 } [get_ports { je[4] }]; #IO_L3N_T0_DQS_34 Sch=je[7]                  
+#set_property -dict { PACKAGE_PIN U17   IOSTANDARD LVCMOS33 } [get_ports { je[5] }]; #IO_L9N_T1_DQS_34 Sch=je[8]                  
+#set_property -dict { PACKAGE_PIN T17   IOSTANDARD LVCMOS33 } [get_ports { je[6] }]; #IO_L20P_T3_34 Sch=je[9]                     
+#set_property -dict { PACKAGE_PIN Y17   IOSTANDARD LVCMOS33 } [get_ports { je[7] }]; #IO_L7N_T1_34 Sch=je[10]                    
+
+
+##Pcam MIPI CSI-2 Connector
+## This configuration expects the sensor to use 672Mbps/lane = 336 MHz HS_Clk
+#create_clock -period 2.976 -name dphy_hs_clock_clk_p -waveform {0.000 1.488} [get_ports dphy_hs_clock_clk_p]
+#set_property INTERNAL_VREF 0.6 [get_iobanks 35]
+#set_property -dict { PACKAGE_PIN J19   IOSTANDARD HSUL_12     } [get_ports { dphy_clk_lp_n }]; #IO_L10N_T1_AD11N_35 Sch=lp_clk_n
+#set_property -dict { PACKAGE_PIN H20   IOSTANDARD HSUL_12     } [get_ports { dphy_clk_lp_p }]; #IO_L17N_T2_AD5N_35 Sch=lp_clk_p
+#set_property -dict { PACKAGE_PIN M18   IOSTANDARD HSUL_12     } [get_ports { dphy_data_lp_n[0] }]; #IO_L8N_T1_AD10N_35 Sch=lp_lane_n[0]
+#set_property -dict { PACKAGE_PIN L19   IOSTANDARD HSUL_12     } [get_ports { dphy_data_lp_p[0] }]; #IO_L9P_T1_DQS_AD3P_35 Sch=lp_lane_p[0]
+#set_property -dict { PACKAGE_PIN L20   IOSTANDARD HSUL_12     } [get_ports { dphy_data_lp_n[1] }]; #IO_L9N_T1_DQS_AD3N_35 Sch=lp_lane_n[1]
+#set_property -dict { PACKAGE_PIN J20   IOSTANDARD HSUL_12     } [get_ports { dphy_data_lp_p[1] }]; #IO_L17P_T2_AD5P_35 Sch=lp_lane_p[1]
+#set_property -dict { PACKAGE_PIN H18   IOSTANDARD LVDS_25     } [get_ports { dphy_hs_clock_clk_n }]; #IO_L14N_T2_AD4N_SRCC_35 Sch=mipi_clk_n
+#set_property -dict { PACKAGE_PIN J18   IOSTANDARD LVDS_25     } [get_ports { dphy_hs_clock_clk_p }]; #IO_L14P_T2_AD4P_SRCC_35 Sch=mipi_clk_p
+#set_property -dict { PACKAGE_PIN M20   IOSTANDARD LVDS_25     } [get_ports { dphy_data_hs_n[0] }]; #IO_L7N_T1_AD2N_35 Sch=mipi_lane_n[0]
+#set_property -dict { PACKAGE_PIN M19   IOSTANDARD LVDS_25     } [get_ports { dphy_data_hs_p[0] }]; #IO_L7P_T1_AD2P_35 Sch=mipi_lane_p[0]
+#set_property -dict { PACKAGE_PIN L17   IOSTANDARD LVDS_25     } [get_ports { dphy_data_hs_n[1] }]; #IO_L11N_T1_SRCC_35 Sch=mipi_lane_n[1]
+#set_property -dict { PACKAGE_PIN L16   IOSTANDARD LVDS_25     } [get_ports { dphy_data_hs_p[1] }]; #IO_L11P_T1_SRCC_35 Sch=mipi_lane_p[1]
+#set_property -dict { PACKAGE_PIN G19   IOSTANDARD LVCMOS33 } [get_ports { cam_clk }]; #IO_L18P_T2_AD13P_35 Sch=cam_clk
+#set_property -dict { PACKAGE_PIN G20   IOSTANDARD LVCMOS33 	PULLUP true} [get_ports { cam_gpio }]; #IO_L18N_T2_AD13N_35 Sch=cam_gpio
+#set_property -dict { PACKAGE_PIN F20   IOSTANDARD LVCMOS33 } [get_ports { cam_scl }]; #IO_L15N_T2_DQS_AD12N_35 Sch=cam_scl
+#set_property -dict { PACKAGE_PIN F19   IOSTANDARD LVCMOS33 } [get_ports { cam_sda }]; #IO_L15P_T2_DQS_AD12P_35 Sch=cam_sda
+ 
+ 
+##Unloaded Crypto Chip SWI (for future use)
+#set_property -dict { PACKAGE_PIN P19   IOSTANDARD LVCMOS33 } [get_ports { crypto_sda }]; #IO_L13N_T2_MRCC_34 Sch=crypto_sda
+ 
+ 
+##Unconnected Pins (Zybo Z7-20 only)
+#set_property PACKAGE_PIN T9 [get_ports {netic19_t9}]; #IO_L12P_T1_MRCC_13
+#set_property PACKAGE_PIN U10 [get_ports {netic19_u10}]; #IO_L12N_T1_MRCC_13
+#set_property PACKAGE_PIN U5 [get_ports {netic19_u5}]; #IO_L19N_T3_VREF_13
+#set_property PACKAGE_PIN U8 [get_ports {netic19_u8}]; #IO_L17N_T2_13
+#set_property PACKAGE_PIN U9 [get_ports {netic19_u9}]; #IO_L17P_T2_13
+#set_property PACKAGE_PIN V10 [get_ports {netic19_v10}]; #IO_L21N_T3_DQS_13
+#set_property PACKAGE_PIN V11 [get_ports {netic19_v11}]; #IO_L21P_T3_DQS_13
+#set_property PACKAGE_PIN V5 [get_ports {netic19_v5}]; #IO_L6N_T0_VREF_13
+#set_property PACKAGE_PIN W10 [get_ports {netic19_w10}]; #IO_L16P_T2_13
+#set_property PACKAGE_PIN W11 [get_ports {netic19_w11}]; #IO_L18P_T2_13
+#set_property PACKAGE_PIN W9 [get_ports {netic19_w9}]; #IO_L16N_T2_13
+#set_property PACKAGE_PIN Y9 [get_ports {netic19_y9}]; #IO_L14P_T2_SRCC_13
+
+
 ```
-
----
-
-## ⚙️ 3. 실행 흐름
-
-### ✅ Step 1: LUT 자동 생성
-
-`brainct_001.bmp`의 노이즈 수준을 기반으로 Bilateral의 σᵣ을 자동으로 조정합니다.
-
-```bash
-python make_range_lut.py
-```
-
-> 결과 파일:
-> - `range_lut_256.mem`
-> - `range_lut_256_meta.json`
-
----
-
-### ✅ Step 2: 필터 실행
-
-#### 🧮 (A) C 실행
-```bash
-cl /O2 bilateral.c
-bilateral.exe
-```
-
-출력:
-- `output_grayscale-c.bmp`
-- `output_bilateral-c.bmp`
-- `output_bilateral-c.mem`
-
-#### 🐍 (B) Python 실행
-```bash
-python bilateral.py
-```
-
-출력:
-- `output_grayscale-py.bmp`
-- `output_bilateral-py.bmp`
-- `output_bilateral-py.mem`
-
-#### ⚡ (C) Verilog 실행 (ModelSim 10.1)
-```bash
-cd verilog
-vlib work
-vlog bilateral_frame.v
-vlog bilateral_tb.v
-vsim -c bilateral_tb -do "run -all; quit"
-```
-
-출력:
-- `../../output_bilateral-vlog.mem`
-
----
-
-## 🧠 4. LUT(`range_lut_256.mem`) 구조
-
-| 행 번호 | HEX 값 | 의미 |
-|----------|---------|------|
-| 0 | FF | 밝기 차이 0 → 가중치 1.0 |
-| 10 | FA | 작은 차이 → 약간의 감쇠 |
-| 128 | 40 | 중간 차이 → 약한 영향 |
-| 255 | 00 | 큰 차이 → 완전 무시 |
-
-생성식:
-```
-LUT[d] = round(255 * exp(-d^2 / (2 * σ_r^2)))
-```
-
----
-
-## 🔬 5. 세 구현(C / Python / Verilog)의 동기화
-
-| 항목 | C | Python | Verilog |
-|------|--|---------|----------|
-| 입력 포맷 | BMP | BMP | MEM(XX\r\n) |
-| LUT 로딩 | fopen / fread | open().read() | `$readmemh` |
-| 연산 | 정수 누적 | NumPy float → int 변환 | 정수 누적 |
-| 결과 일치 | ✅ | ✅ | ✅ (1995 문법) |
-
----
-
-## 🧩 6. 비교 도구
-
-### `compare_results.py`
-- C / Python / Verilog 결과 비교 (파일 크기, 바이트, 값 일치)
-- MEM 파일의 줄바꿈(EOL) 차이까지 감지
-
-### `compare_gui.py`
-- BMP 시각 비교 도구
-- `brainct_001.bmp` 원본과 결과 이미지 간 **차이 시각화**
-- 차이 히트맵 및 평균 편차 로그 표시
-
----
-
-## 💡 7. 트러블슈팅
-
-| 문제 | 원인 | 해결 |
-|------|------|------|
-| LUT 불일치 | `range_lut_256.mem` 누락/위치 오류 | 실행 폴더에 동일 LUT 배치 |
-| Verilog 컴파일 에러 | Verilog-2001 문법 사용 | 모든 파일 1995 문법으로 수정됨 |
-| MEM 불일치 | EOL 차이 (`\r\n` vs `\n`) | C/Py 모두 `\r\n`로 통일 |
-| 결과 값 차이 | LUT 다름 / 정규화 오류 | LUT 동일 여부 확인 |
-
----
-
-## 📄 8. 메타 예시 (`range_lut_256_meta.json`)
-
-```json
-{
-  "image": "brainct_001.bmp",
-  "estimated_sigma_noise": 4.21,
-  "chosen_sigma_r": 8.0,
-  "formula": "exp(-d^2/(2*sigma_r^2))*255",
-  "line_ending": "CRLF"
-}
-```
-
----
-
-## 🧾 9. Bilateral 필터의 장점
-
-| 항목 | 설명 |
-|------|------|
-| 엣지 보존 | Gaussian 대비 경계 손상 최소화 |
-| 노이즈 제거 | Median보다 부드럽고 안정적 |
-| 조정 가능 | LUT 기반 σᵣ 수정으로 강도 조절 |
-| 하드웨어 구현 | 정수형 LUT 기반 구조로 FPGA 친화적 |
-
----
-
-## 📦 10. 확장 계획
-
-- LUT 자동 재학습 기능 추가 (`auto_sigma.py`)
-- LUT를 σᵣ 파라미터별 다중 저장 (`range_lut_soft/medium/strong.mem`)
-- Verilog 테스트 자동화 스크립트 (`run_all.tcl`)
-- FPGA 적용 (Zybo Z7-20 기반)
-
----
-
-### ✅ 결론
-
-이 Bilateral 필터는 MRI/CT 영상의 전처리용으로 최적화되어 있으며,  
-C / Python / Verilog 간 **정밀한 결과 일치**와 **하드웨어 구현 친화성**을 모두 만족합니다.
