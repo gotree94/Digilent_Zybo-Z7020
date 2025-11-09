@@ -155,27 +155,6 @@ endmodule
 ```
 
 ```xdc
-### Clock (수정 필수: 실제 보드의 sys_clk 핀/주파수에 맞추세요)
-#set_property -dict { PACKAGE_PIN Y9   IOSTANDARD LVCMOS33 } [get_ports clk]
-#create_clock -add -name sys_clk_pin -period 8.0 [get_ports clk] ; # 125MHz라면 8ns, 100MHz면 10ns
-
-### Reset (푸시버튼 또는 외부 핀)
-#set_property -dict { PACKAGE_PIN T18  IOSTANDARD LVCMOS33 PULLUP true } [get_ports rst_n]
-
-### RUN/STOP 스위치 (보드의 DIP 스위치 중 하나)
-#set_property -dict { PACKAGE_PIN G15  IOSTANDARD LVCMOS33 PULLUP true } [get_ports sw_run]
-
-### DIR 스위치
-#set_property -dict { PACKAGE_PIN P15  IOSTANDARD LVCMOS33 PULLUP true } [get_ports sw_dir]
-
-### Coils → ULN2003 IN1..IN4
-## 예: PMOD JD 핀 예시 (반드시 보드 핀맵 확인!)
-#set_property -dict { PACKAGE_PIN W19 IOSTANDARD LVCMOS33 DRIVE 8 SLEW SLOW } [get_ports {coils[0]}] ; # D
-#set_property -dict { PACKAGE_PIN W20 IOSTANDARD LVCMOS33 DRIVE 8 SLEW SLOW } [get_ports {coils[1]}] ; # C
-#set_property -dict { PACKAGE_PIN U19 IOSTANDARD LVCMOS33 DRIVE 8 SLEW SLOW } [get_ports {coils[2]}] ; # B
-#set_property -dict { PACKAGE_PIN U20 IOSTANDARD LVCMOS33 DRIVE 8 SLEW SLOW } [get_ports {coils[3]}] ; # A
-
-
 ## This file is a general .xdc for the Zybo Z7 Rev. B
 ## It is compatible with the Zybo Z7-20 and Zybo Z7-10
 ## To use it in a project:
