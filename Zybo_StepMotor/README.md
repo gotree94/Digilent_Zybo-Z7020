@@ -59,9 +59,6 @@ https://cookierobotics.com/042/
 
 ```verilog
 // zybo_z720_stepper_top.v
-`timescale 1ns/1ps
-`default_nettype none
-
 module zybo_z720_stepper_top #(
     parameter integer CLK_HZ        = 125_000_000, 
     parameter integer STEPS_PER_SEC = 600,         // 초당 스텝 수(half-step 기준). 28BYJ-48은 200~600 정도 무난
@@ -206,9 +203,6 @@ module debounce #(
         end
     end
 endmodule
-
-`default_nettype wire
-
 ```
 
 ```xdc
