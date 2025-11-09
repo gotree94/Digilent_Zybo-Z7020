@@ -266,3 +266,129 @@ set_property -dict { PACKAGE_PIN H15   IOSTANDARD LVCMOS33 } [get_ports { coils[
 #set_property -dict { PACKAGE_PIN Y17   IOSTANDARD LVCMOS33 } [get_ports { je[7] }]; #IO_L7N_T1_34 Sch=je[10]                    
 
 ```
+
+---
+
+#  AXI 인터페이스
+
+* 1) 스텝 코어 (AXI 외부용, 런타임 제어 핀 방식)
+* 아래는 기존 코드를 런타임 제어 신호로 간소화한 코어입니다.
+* half_step_i, run_i, dir_i, ticks_per_step_i 입력으로 동작
+* 디바운스 제거(리눅스에서 제어하므로 불필요)
+* Active-Low reset (rst_n)
+
+```
+// stepper_core.v : runtime-controllable stepper engine (no AXI here)
+`timescale 1ns/1ps
+`default_nettype none
+
+module stepper_core #(
+    parameter integer CLK_HZ = 125_000_000
+)(
+    input  wire        clk,
+    input  wire        rst_n,             // Active-Low Reset
+    input  wire        run_i,             // 1=RUN, 0=STOP
+    input  wire        dir_i,             // 1=Forward, 0=Backward
+    input  wire        half_step_i,       // 1=half-step(8), 0=full-step(4)
+    input  wire [31:0] ticks_per_step_i,  // reload value: clk_hz / steps_per_sec
+    output wire [3:0]  coils,             // ULN2003 IN1..IN4
+    output wire        step_pulse_o,      // 디버깅용(한 스텝 경계 펄스)
+    output wire [2:0]  step_idx_o         // 현재 스텝 인덱스
+);
+
+    // -------- 타이머 --------
+    reg [31:0] tick_cnt;
+    wire step_pulse = (tick_cnt == 0);
+    assign step_pulse_o = step_pulse;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            tick_cnt <= (ticks_per_step_i>0) ? (ticks_per_step_i-1) : 32'd0;
+        end else if (run_i) begin
+            tick_cnt <= (tick_cnt==0)
+                ? ((ticks_per_step_i>0)?(ticks_per_step_i-1):32'd0)
+                : (tick_cnt-1);
+        end else begin
+            tick_cnt <= (ticks_per_step_i>0) ? (ticks_per_step_i-1) : 32'd0;
+        end
+    end
+
+    // -------- 스텝 인덱스 --------
+    wire [2:0] max_idx = half_step_i ? 3'd7 : 3'd3;
+    reg  [2:0] step_idx;
+    assign step_idx_o = step_idx;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            step_idx <= 3'd0;
+        end else if (run_i && step_pulse) begin
+            if (dir_i) begin
+                step_idx <= (step_idx == max_idx) ? 3'd0 : (step_idx + 1'b1);
+            end else begin
+                step_idx <= (step_idx == 3'd0) ? max_idx : (step_idx - 1'b1);
+            end
+        end
+    end
+
+    // -------- 패턴 ROM --------
+    reg [3:0] patt;
+    always @(*) begin
+        if (half_step_i) begin
+            case (step_idx)
+                3'd0: patt = 4'b1000; // A
+                3'd1: patt = 4'b1100; // A+B
+                3'd2: patt = 4'b0100; // B
+                3'd3: patt = 4'b0110; // B+C
+                3'd4: patt = 4'b0010; // C
+                3'd5: patt = 4'b0011; // C+D
+                3'd6: patt = 4'b0001; // D
+                3'd7: patt = 4'b1001; // D+A
+                default: patt = 4'b0000;
+            endcase
+        end else begin
+            case (step_idx[1:0])
+                2'd0: patt = 4'b1100; // A+B
+                2'd1: patt = 4'b0110; // B+C
+                2'd2: patt = 4'b0011; // C+D
+                2'd3: patt = 4'b1001; // D+A
+                default: patt = 4'b0000;
+            endcase
+        end
+    end
+
+    assign coils = run_i ? patt : 4'b0000;
+
+endmodule
+
+`default_nettype wire
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
