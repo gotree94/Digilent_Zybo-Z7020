@@ -7,6 +7,8 @@
 <img width="608" height="186" alt="003" src="https://github.com/user-attachments/assets/e3575f39-af0e-401a-8ddc-dfcf0dacb800" />
 <br>
 
+https://cookierobotics.com/042/
+
 ### ⚙️ 2. Full-Step (풀스텝) 구동
 
 한 번에 두 코일씩(예: A + B, B + C, C + D, D + A) 에 전류를 흘립니다.
