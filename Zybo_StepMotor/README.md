@@ -272,16 +272,18 @@ set_property -dict { PACKAGE_PIN H15   IOSTANDARD LVCMOS33 } [get_ports { coils[
 #  AXI 인터페이스
 
 * 1) 스텝 코어 (AXI 외부용, 런타임 제어 핀 방식)
-* 아래는 기존 코드를 런타임 제어 신호로 간소화한 코어입니다.
-* half_step_i, run_i, dir_i, ticks_per_step_i 입력으로 동작
-* 디바운스 제거(리눅스에서 제어하므로 불필요)
-* Active-Low reset (rst_n)
+   * 아래는 기존 코드를 런타임 제어 신호로 간소화한 코어입니다.
+   * half_step_i, run_i, dir_i, ticks_per_step_i 입력으로 동작
+   * 디바운스 제거(리눅스에서 제어하므로 불필요)
+   * Active-Low reset (rst_n)
+* Tools -> Create and Package New IP
+   * Vivado에서는 이 파일들을 Create and Package IP 로 묶어 AXI4-Lite Slave Peripheral 로 등록한 뒤,
+   * Zynq PS와 AXI SmartConnect/Interconnect에 연결.
+   * coils[3:0]는 기존 XDC(ULN2003) 핀에 매핑합니다.
+   * s_axi_aclk 는 PS의 FCLK_CLK0(예: 100MHz 또는 125MHz) 를 사용.
 
 ```
 // stepper_core.v : runtime-controllable stepper engine (no AXI here)
-`timescale 1ns/1ps
-`default_nettype none
-
 module stepper_core #(
     parameter integer CLK_HZ = 125_000_000
 )(
@@ -359,9 +361,6 @@ module stepper_core #(
     assign coils = run_i ? patt : 4'b0000;
 
 endmodule
-
-`default_nettype wire
-
 ```
 
 
