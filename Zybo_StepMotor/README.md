@@ -166,7 +166,7 @@ endmodule
 
 // ---------------------- 디바운스 모듈 ----------------------
 module debounce #(
-    parameter integer CLK_HZ = 100_000_000,
+    parameter integer CLK_HZ = 125_000_000,
     parameter integer MS     = 10
 )(
     input  wire clk,
