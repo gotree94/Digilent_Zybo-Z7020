@@ -2,6 +2,11 @@
 
 ## Standalone Step Motor Controller : StepMotor(28BYJ-48) 5V - ULN2003
 
+<img width="357" height="241" alt="002" src="https://github.com/user-attachments/assets/e3528fc4-6645-4929-b022-2307864cf76e" />
+<br>
+<img width="608" height="186" alt="003" src="https://github.com/user-attachments/assets/e3575f39-af0e-401a-8ddc-dfcf0dacb800" />
+<br>
+
 ```verilog
 // zybo_z720_stepper_top.v
 `timescale 1ns/1ps
