@@ -868,12 +868,6 @@ Number of Registers: 4 (최소한 필요)
 * Offset 0x08: Speed Register (STEPS_PER_SEC 설정)
 * Offset 0x0C: Reserved
 
-<img width="1357" height="552" alt="014" src="https://github.com/user-attachments/assets/e10bc26a-e087-4433-b404-f81fd7c2f40c" />
-<br>
-<img width="1461" height="500" alt="001" src="https://github.com/user-attachments/assets/33fe5dbb-803f-47cf-9c6c-195cc18e6d69" />
-<br>
-<img width="995" height="484" alt="002" src="https://github.com/user-attachments/assets/43d69117-142a-4003-885a-16ea597653d8" />
-<br>
 <img width="842" height="572" alt="004" src="https://github.com/user-attachments/assets/dcbb97ff-0f82-4658-9496-09764785ba2b" />
 <br>
 <img width="842" height="572" alt="005" src="https://github.com/user-attachments/assets/109a677f-2991-4562-8b52-2a7c1dc8ddc5" />
