@@ -872,8 +872,6 @@ Number of Registers: 4 (최소한 필요)
 <br>
 <img width="842" height="572" alt="005" src="https://github.com/user-attachments/assets/109a677f-2991-4562-8b52-2a7c1dc8ddc5" />
 <br>
-<img width="1154" height="452" alt="006" src="https://github.com/user-attachments/assets/ffacd1f6-debe-497d-812c-ceac84a49fe3" />
-<br>
 <img width="842" height="572" alt="007" src="https://github.com/user-attachments/assets/ac712f1d-8ef3-4dc8-91ab-1f5f9815998a" />
 <br>
 <img width="842" height="572" alt="008" src="https://github.com/user-attachments/assets/49a313c0-b29a-4c6c-970a-2b527c70bf0c" />
