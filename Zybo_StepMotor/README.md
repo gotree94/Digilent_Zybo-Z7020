@@ -1074,7 +1074,7 @@ void stepper_set_direction(int cw) {
 }
 ```
 
-* Petalinux
+### 9. Software에서 제어 (Peta Linux)
 
 ```c
 // stepper_test.c (PetaLinux User Application)
