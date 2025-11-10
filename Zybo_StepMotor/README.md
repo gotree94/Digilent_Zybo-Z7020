@@ -869,6 +869,7 @@ Number of Registers: 4 (최소한 필요)
 * Offset 0x0C: Reserved
 
 ### 4. IP 구조 제안
+
 IP를 생성하면 <ip_name>_v1_0_S00_AXI.v 파일이 생성됩니다. 이 파일을 수정해야 합니다:
 
 ```verilog
@@ -958,6 +959,68 @@ module stepper_motor_ctrl_v1_0 #(
     );
 
 endmodule
+```
+### 5. 확인하기
+
+```
+C:\Users\Administrator\ip_repo\stepper_motor_ctrl_1_0\hdl
+```
+#### 5.1. IP 소스 파일 확인
+* IP 디렉토리로 가서 필요한 파일들이 모두 있는지 확인:
+```
+<ip_repo>/stepper_motor_ctrl_1.0/hdl/
+```
+다음 파일들이 반드시 있어야 합니다:
+   * stepper_motor_ctrl_v1_0.v (top wrapper)
+   * stepper_motor_ctrl_v1_0_S00_AXI.v (AXI interface)
+   * zybo_z720_stepper_top.v (당신의 stepper 로직)
+   * debounce.v
+
+#### 5.2. IP를 다시 패키징 (권장 방법)
+   * IP Catalog에서 생성한 IP를 수정하는 방법:
+   * Step 1: IP를 Edit 모드로 열기
+```
+IP Catalog → 생성한 IP 우클릭 → Edit in IP Packager
+```
+   * 또는 원래 IP 프로젝트를 다시 열기
+   * Step 2: 소스 파일 추가
+   * IP Packager가 열리면:
+   * Tools → Create and Package New IP 창에서:
+```
+Packaging Steps → File Groups
+→ Merge changes from File Groups Wizard 클릭
+```
+또는 직접 추가:
+```
+Add Files → Add File or Add Directory
+```
+다음 파일들을 추가:
+   * zybo_z720_stepper_top.v
+   * debounce.v
+
+   * Step 3: component.xml 확인
+   * component.xml 파일에서 파일 그룹 확인:
+
+```xml
+<spirit:fileSet>
+  <spirit:name>xilinx_anylanguagesynthesis</spirit:name>
+  <spirit:file>
+    <spirit:name>hdl/stepper_motor_ctrl_v1_0_S00_AXI.v</spirit:name>
+    <spirit:fileType>verilogSource</spirit:fileType>
+  </spirit:file>
+  <spirit:file>
+    <spirit:name>hdl/stepper_motor_ctrl_v1_0.v</spirit:name>
+    <spirit:fileType>verilogSource</spirit:fileType>
+  </spirit:file>
+  <spirit:file>
+    <spirit:name>hdl/zybo_z720_stepper_top.v</spirit:name>
+    <spirit:fileType>verilogSource</spirit:fileType>
+  </spirit:file>
+  <spirit:file>
+    <spirit:name>hdl/debounce.v</spirit:name>
+    <spirit:fileType>verilogSource</spirit:fileType>
+  </spirit:file>
+</spirit:fileSet>
 ```
 
 ### 6. Constraints 파일 준비
