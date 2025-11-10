@@ -868,6 +868,34 @@ Number of Registers: 4 (최소한 필요)
 * Offset 0x08: Speed Register (STEPS_PER_SEC 설정)
 * Offset 0x0C: Reserved
 
+<img width="1357" height="552" alt="014" src="https://github.com/user-attachments/assets/e10bc26a-e087-4433-b404-f81fd7c2f40c" />
+<br>
+<img width="1461" height="500" alt="001" src="https://github.com/user-attachments/assets/33fe5dbb-803f-47cf-9c6c-195cc18e6d69" />
+<br>
+<img width="995" height="484" alt="002" src="https://github.com/user-attachments/assets/43d69117-142a-4003-885a-16ea597653d8" />
+<br>
+<img width="842" height="572" alt="004" src="https://github.com/user-attachments/assets/dcbb97ff-0f82-4658-9496-09764785ba2b" />
+<br>
+<img width="842" height="572" alt="005" src="https://github.com/user-attachments/assets/109a677f-2991-4562-8b52-2a7c1dc8ddc5" />
+<br>
+<img width="1154" height="452" alt="006" src="https://github.com/user-attachments/assets/ffacd1f6-debe-497d-812c-ceac84a49fe3" />
+<br>
+<img width="842" height="572" alt="007" src="https://github.com/user-attachments/assets/ac712f1d-8ef3-4dc8-91ab-1f5f9815998a" />
+<br>
+<img width="842" height="572" alt="008" src="https://github.com/user-attachments/assets/49a313c0-b29a-4c6c-970a-2b527c70bf0c" />
+<br>
+<img width="842" height="572" alt="009" src="https://github.com/user-attachments/assets/58fcd524-f69e-4c13-9eea-f4b4aa9f1cb0" />
+<br>
+<img width="842" height="572" alt="010" src="https://github.com/user-attachments/assets/28b3842d-7169-49b3-9bd4-801bb6897fca" />
+<br>
+<img width="842" height="572" alt="011" src="https://github.com/user-attachments/assets/2108e12f-9342-4be1-915f-b82da6645ba0" />
+<br>
+<img width="1080" height="657" alt="012" src="https://github.com/user-attachments/assets/301d7c4f-fac9-4cb0-b415-a6fdcb65766b" />
+<br>
+<img width="1077" height="655" alt="013" src="https://github.com/user-attachments/assets/63413475-cbfc-4413-bda9-00fe96b3642c" />
+<br>
+
+
 ### 4. IP 구조 제안
 
 IP를 생성하면 <ip_name>_v1_0_S00_AXI.v 파일이 생성됩니다. 이 파일을 수정해야 합니다:
