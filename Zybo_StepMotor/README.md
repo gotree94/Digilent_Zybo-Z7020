@@ -830,13 +830,183 @@ root@myproject:~# ./stepctl
   half_full(gpio1023) = 0
 ```
 
+---
 
+=============================================================
+# AXI4 Peripheral IP 생성 과정
+=============================================================
 
+### 1. Create and Package New IP 시작
+Vivado에서:
+```
+Tools → Create and Package New IP...
+→ Create a new AXI4 peripheral 선택
+→ Next
+```
 
+### 2. Peripheral Details 설정
+```
+Name: stepper_motor_ctrl (또는 원하는 이름)
+Version: 1.0
+Display name: Stepper Motor Controller
+Description: ULN2003 Stepper Motor Controller with AXI4-Lite interface
+```
 
+### 3. Add Interfaces
+```
+Interface Type: AXI4-Lite
+Interface Mode: Slave
+Data Width: 32
+Number of Registers: 4 (최소한 필요)
+```
 
+추천 레지스터 맵:
+* Offset 0x00: Control Register (run, dir, half_full, enable)
+* Offset 0x04: Status Register (현재 step_idx, coils 상태)
+* Offset 0x08: Speed Register (STEPS_PER_SEC 설정)
+* Offset 0x0C: Reserved
 
+### 4. IP 구조 제안
+IP를 생성하면 <ip_name>_v1_0_S00_AXI.v 파일이 생성됩니다. 이 파일을 수정해야 합니다:
 
+```verilog
+// stepper_motor_ctrl_v1_0_S00_AXI.v 수정 예시
+
+module stepper_motor_ctrl_v1_0_S00_AXI #(
+    parameter integer C_S_AXI_DATA_WIDTH = 32,
+    parameter integer C_S_AXI_ADDR_WIDTH = 4,
+    parameter integer CLK_HZ = 125_000_000
+)(
+    // AXI ports...
+    input wire S_AXI_ACLK,
+    input wire S_AXI_ARESETN,
+    // ... (standard AXI signals)
+    
+    // User ports - Stepper Motor Interface
+    output wire [3:0] coils_out
+);
+
+    // AXI4-Lite signals (기존 생성된 코드 유지)
+    // ...
+
+    // User registers
+    reg [31:0] control_reg;  // slv_reg0
+    reg [31:0] status_reg;   // slv_reg1  
+    reg [31:0] speed_reg;    // slv_reg2
+    
+    // Control signals extraction
+    wire motor_enable = control_reg[0];
+    wire motor_run    = control_reg[1];
+    wire motor_dir    = control_reg[2];
+    wire half_full    = control_reg[3];
+    
+    // Speed parameter
+    wire [15:0] steps_per_sec = speed_reg[15:0];
+    
+    // Instantiate your stepper controller
+    wire [3:0] in_signal = {half_full, motor_dir, motor_run, S_AXI_ARESETN};
+    
+    zybo_z720_stepper_top #(
+        .CLK_HZ(CLK_HZ),
+        .STEPS_PER_SEC(600)  // or use speed_reg value
+    ) stepper_inst (
+        .clk(S_AXI_ACLK),
+        .in_signal(in_signal),
+        .coils(coils_out)
+    );
+    
+    // Update status register
+    always @(posedge S_AXI_ACLK) begin
+        if (!S_AXI_ARESETN)
+            status_reg <= 0;
+        else
+            status_reg <= {28'h0, coils_out};
+    end
+
+    // AXI write/read logic (기존 템플릿 코드 활용)
+    // slv_reg0 → control_reg
+    // slv_reg1 → status_reg (read-only)
+    // slv_reg2 → speed_reg
+    
+endmodule
+```
+
+### 5. Top-level Wrapper 수정
+stepper_motor_ctrl_v1_0.v 파일에 외부 포트 추가:
+```verilog
+module stepper_motor_ctrl_v1_0 #(
+    parameter integer C_S00_AXI_DATA_WIDTH = 32,
+    parameter integer C_S00_AXI_ADDR_WIDTH = 4
+)(
+    // AXI ports
+    input wire s00_axi_aclk,
+    input wire s00_axi_aresetn,
+    // ... (standard AXI ports)
+    
+    // User ports - add this!
+    output wire [3:0] coils
+);
+
+    stepper_motor_ctrl_v1_0_S00_AXI #(
+        .C_S_AXI_DATA_WIDTH(C_S00_AXI_DATA_WIDTH),
+        .C_S_AXI_ADDR_WIDTH(C_S00_AXI_ADDR_WIDTH)
+    ) stepper_motor_ctrl_v1_0_S00_AXI_inst (
+        // AXI connections...
+        .coils_out(coils)  // Connect user port
+    );
+
+endmodule
+```
+
+### 6. Constraints 파일 준비
+IP 패키징 후 Block Design에서 사용할 때 외부 포트로 연결:
+
+```tcl
+# coils[0-3] → Pmod JE 등에 연결
+set_property PACKAGE_PIN V12 [get_ports {coils[0]}]
+set_property PACKAGE_PIN W16 [get_ports {coils[1]}]
+set_property PACKAGE_PIN J15 [get_ports {coils[2]}]
+set_property PACKAGE_PIN H15 [get_ports {coils[3]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {coils[*]}]
+```
+
+### 7. IP Packaging 완료
+
+```
+Review and Package → Re-Package IP
+```
+
+### 8. Block Design에서 사용
+
+* IP Catalog에서 생성한 IP 추가
+* ZYNQ PS의 M_AXI_GP0와 연결 (Run Connection Automation)
+* coils 포트를 "Make External"로 외부 포트 생성
+* Address Editor에서 적절한 주소 할당 (예: 0x43C0_0000)
+
+### 9. Software에서 제어 (PetaLinux/Bare-metal)
+
+```c
+#define STEPPER_BASE_ADDR 0x43C00000
+#define CTRL_REG   (*(volatile uint32_t *)(STEPPER_BASE_ADDR + 0x00))
+#define STATUS_REG (*(volatile uint32_t *)(STEPPER_BASE_ADDR + 0x04))
+#define SPEED_REG  (*(volatile uint32_t *)(STEPPER_BASE_ADDR + 0x08))
+
+// Motor control
+void stepper_start(void) {
+    CTRL_REG |= 0x02;  // Set run bit
+}
+
+void stepper_stop(void) {
+    CTRL_REG &= ~0x02; // Clear run bit
+}
+
+void stepper_set_direction(int cw) {
+    if (cw)
+        CTRL_REG |= 0x04;
+    else
+        CTRL_REG &= ~0x04;
+}
+```
 
 
 
