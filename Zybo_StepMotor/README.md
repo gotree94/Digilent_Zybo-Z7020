@@ -836,6 +836,8 @@ root@myproject:~# ./stepctl
 # AXI4 Peripheral IP 생성 과정
 =============================================================
 
+<img width="1154" height="452" alt="006" src="https://github.com/user-attachments/assets/40d6decf-b090-468d-95ad-401d186e5da3" />
+
 ### 1. Create and Package New IP 시작
 Vivado에서:
 ```
