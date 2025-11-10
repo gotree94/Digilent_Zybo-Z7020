@@ -1217,7 +1217,188 @@ int main(int argc, char **argv) {
 arm-linux-gnueabihf-gcc stepper_test.c -o stepper_test
 ```
 
+50MHz Motor controller
 
+```verilog
+// zybo_z720_stepper_top.v - 50MHz version
+// ULN2003 Stepper Motor Controller for Zybo Z7-20
+// Clock: 50MHz (modified from 125MHz)
+
+module zybo_z720_stepper_top #(
+    parameter integer CLK_HZ        = 50_000_000,  // 50MHz
+    parameter integer STEPS_PER_SEC = 600
+)(
+    input  wire clk,
+    input  wire [3:0] in_signal,
+    output wire [3:0] coils
+);
+    // Input signal mapping
+    wire rst_n     = in_signal[0];  // Active-Low Reset
+    wire sw_run    = in_signal[1];  // Run/Stop control
+    wire sw_dir    = in_signal[2];  // Direction: 1=CW, 0=CCW
+    wire half_full = in_signal[3];  // Step mode: 1=half-step, 0=full-step
+    
+    // Debounced signals
+    wire run_clean, dir_clean;
+    
+    // Debounce for run signal
+    debounce #(
+        .CLK_HZ(CLK_HZ), 
+        .MS(10)
+    ) u_db_run (
+        .clk(clk), 
+        .rst_n(rst_n), 
+        .din(sw_run), 
+        .dout(run_clean)
+    );
+    
+    // Debounce for direction signal
+    debounce #(
+        .CLK_HZ(CLK_HZ), 
+        .MS(10)
+    ) u_db_dir (
+        .clk(clk), 
+        .rst_n(rst_n), 
+        .din(sw_dir), 
+        .dout(dir_clean)
+    );
+    
+    // Step timer calculation
+    // At 50MHz with 600 steps/sec: TICKS_PER_STEP = 83,333 ticks
+    // Step period = 1.667ms
+    localparam integer TICKS_PER_STEP = (CLK_HZ / STEPS_PER_SEC);
+    
+    reg [31:0] tick_cnt;
+    wire step_pulse = (tick_cnt == 0);
+    
+    // Step timer counter
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            tick_cnt <= TICKS_PER_STEP - 1;
+        else if (run_clean)
+            tick_cnt <= (tick_cnt == 0) ? (TICKS_PER_STEP - 1) : (tick_cnt - 1);
+        else
+            tick_cnt <= TICKS_PER_STEP - 1;
+    end
+    
+    // Step index (0-7 for half-step, 0-3 for full-step)
+    reg [2:0] step_idx;
+    reg [2:0] max_idx;
+    
+    // Maximum index based on step mode
+    always @(*) 
+        max_idx = (half_full) ? 3'd7 : 3'd3;
+    
+    // Step index counter
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            step_idx <= 0;
+        else if (run_clean && step_pulse) begin
+            if (dir_clean) begin
+                // Clockwise rotation
+                if (step_idx == max_idx) 
+                    step_idx <= 0;
+                else                     
+                    step_idx <= step_idx + 1'b1;
+            end else begin
+                // Counter-clockwise rotation
+                if (step_idx == 0) 
+                    step_idx <= max_idx;
+                else               
+                    step_idx <= step_idx - 1'b1;
+            end
+        end
+    end
+    
+    // Coil pattern ROM
+    reg [3:0] patt;
+    
+    always @(*) begin
+        if (half_full) begin
+            // Half-step sequence (8 steps)
+            case (step_idx)
+                3'd0: patt = 4'b1000;  // A
+                3'd1: patt = 4'b1100;  // AB
+                3'd2: patt = 4'b0100;  // B
+                3'd3: patt = 4'b0110;  // BC
+                3'd4: patt = 4'b0010;  // C
+                3'd5: patt = 4'b0011;  // CD
+                3'd6: patt = 4'b0001;  // D
+                3'd7: patt = 4'b1001;  // DA
+                default: patt = 4'b0000;
+            endcase
+        end else begin
+            // Full-step sequence (4 steps)
+            case (step_idx[1:0])
+                2'd0: patt = 4'b1100;  // AB
+                2'd1: patt = 4'b0110;  // BC
+                2'd2: patt = 4'b0011;  // CD
+                2'd3: patt = 4'b1001;  // DA
+                default: patt = 4'b0000;
+            endcase
+        end
+    end
+    
+    // Output coil pattern (0 when stopped)
+    assign coils = run_clean ? patt : 4'b0000;
+
+endmodule
+
+// ---------------------- debounce ----------------------
+// Input debounce module for switch signals
+// Filters out mechanical bounce noise
+
+module debounce #(
+    parameter integer CLK_HZ = 50_000_000,  // 50MHz
+    parameter integer MS     = 10           // 10ms debounce time
+)(
+    input  wire clk,
+    input  wire rst_n,
+    input  wire din,
+    output reg  dout
+);
+    // Counter max value calculation
+    // At 50MHz with 10ms: CNT_MAX = 400,000
+    // Actual debounce time = 8ms (close enough)
+    localparam integer CNT_MAX = (CLK_HZ/1250)*MS;
+    
+    // Double synchronizer for metastability prevention
+    reg din_q1, din_q2;
+    reg [31:0] cnt;
+    
+    // Input synchronizer
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            din_q1 <= 1'b0;
+            din_q2 <= 1'b0;
+        end else begin
+            din_q1 <= din;
+            din_q2 <= din_q1;
+        end
+    end
+    
+    // Debounce counter
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            cnt  <= 0;
+            dout <= 0;
+        end else if (din_q2 == dout) begin
+            // Input stable, reset counter
+            cnt <= 0;
+        end else begin
+            // Input changed, count up
+            if (cnt >= CNT_MAX) begin
+                // Counter reached max, update output
+                dout <= din_q2;
+                cnt  <= 0;
+            end else begin
+                cnt <= cnt + 1;
+            end
+        end
+    end
+
+endmodule
+```
 
 
 
