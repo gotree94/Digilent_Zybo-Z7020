@@ -550,6 +550,12 @@ echo 1020 > /sys/class/gpio/unexport
 1023 - half_full (0:half, 1: full)
 ```
 
+### stepctl.c (ARM Compile)
+
+```
+arm-linux-gnueabihf-gcc -o stepctl stepctl.c
+```
+
 ```c
 // stepctl.c — Zybo Z7-20 + PetaLinux에서 sysfs GPIO(1020~1023)로 스텝모터 제어
 // 사용법: 보드의 UART 콘솔(ttyPS0)에서 ./stepctl 실행 후 명령 입력
