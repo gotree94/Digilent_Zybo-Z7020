@@ -804,7 +804,31 @@ int main(void){
 
 ```
 
+```
+root@myproject:~# ./stepctl
 
+=== Step Motor GPIO Control (sysfs) ===
+ - reset     : gpio1020  (0: reset(assert), 1: unreset(deassert))
+ - run       : gpio1021  (0: stop, 1: run)
+ - dir       : gpio1022  (0: forward, 1: backward)
+ - half_full : gpio1023  (0: half-step, 1: full-step)
+
+명령:
+  show                      : 현재 상태 출력
+  set <name> <0|1>          : 값 설정 (예: set run 1)
+  toggle <name>             : 0/1 토글
+  pulse <name> <ms> [level] : <level>(기본 1)로 <ms>ms 펄스
+  watch <ms>                : <ms>주기로 상태 갱신 (Ctrl+C 종료)
+  help                      : 도움말
+  quit/exit                 : 종료
+
+
+[GPIO 상태]
+  reset    (gpio1020) = 0
+  run      (gpio1021) = 0
+  dir      (gpio1022) = 0
+  half_full(gpio1023) = 0
+```
 
 
 
