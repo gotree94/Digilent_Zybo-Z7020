@@ -964,6 +964,7 @@ endmodule
 
 ```
 C:\Users\Administrator\ip_repo\stepper_motor_ctrl_1_0\hdl
+C:\Users\Administrator\zybo_z720_stepper_top\zybo_z720_stepper_top.gen\sources_1\bd\design_1\ipshared\8bbb\hdl
 ```
 #### 5.1. IP 소스 파일 확인
 * IP 디렉토리로 가서 필요한 파일들이 모두 있는지 확인:
