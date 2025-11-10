@@ -369,6 +369,11 @@ endmodule
 ## 해결안 1
 =================================================
 
+<img width="995" height="484" alt="002" src="https://github.com/user-attachments/assets/a9de87aa-6fda-4716-ac66-10f6feb62b9b" />
+<br>
+<img width="1461" height="500" alt="001" src="https://github.com/user-attachments/assets/280f59ff-1195-457e-b728-81e9364a7c7e" />
+<br>
+
 ```verilog
 // zybo_z720_stepper_top.v
 module zybo_z720_stepper_top #(
