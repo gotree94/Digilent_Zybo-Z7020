@@ -363,8 +363,435 @@ module stepper_core #(
 endmodule
 ```
 
+---
+
+=================================================
+## 해결안 1
+=================================================
+
+```verilog
+// zybo_z720_stepper_top.v
+module zybo_z720_stepper_top #(
+    parameter integer CLK_HZ        = 125_000_000,
+    parameter integer STEPS_PER_SEC = 600
+)(
+    input  wire clk,
+    input  wire [3:0] in_signal,
+    output wire [3:0] coils
+);
+
+    wire rst_n     = in_signal[0];  // Active-Low Reset
+    wire sw_run    = in_signal[1];
+    wire sw_dir    = in_signal[2];
+    wire half_full = in_signal[3];
+
+    // 디바운스
+    wire run_clean, dir_clean;
+    debounce #(.CLK_HZ(CLK_HZ), .MS(10)) u_db_run (
+        .clk(clk), .rst_n(rst_n), .din(sw_run), .dout(run_clean)
+    );
+    debounce #(.CLK_HZ(CLK_HZ), .MS(10)) u_db_dir (
+        .clk(clk), .rst_n(rst_n), .din(sw_dir), .dout(dir_clean)
+    );
+
+    // 스텝 타이머
+    localparam integer TICKS_PER_STEP = (CLK_HZ / STEPS_PER_SEC);
+    reg [31:0] tick_cnt;
+    wire step_pulse = (tick_cnt == 0);
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            tick_cnt <= TICKS_PER_STEP - 1;
+        else if (run_clean)
+            tick_cnt <= (tick_cnt == 0) ? (TICKS_PER_STEP - 1) : (tick_cnt - 1);
+        else
+            tick_cnt <= TICKS_PER_STEP - 1;
+    end
+
+    // 스텝 인덱스
+    reg [2:0] step_idx;
+    reg [2:0] max_idx;
+    always @(*) max_idx = (half_full) ? 3'd7 : 3'd3;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            step_idx <= 0;
+        else if (run_clean && step_pulse) begin
+            if (dir_clean) begin
+                if (step_idx == max_idx) step_idx <= 0;
+                else                     step_idx <= step_idx + 1'b1;
+            end else begin
+                if (step_idx == 0) step_idx <= max_idx;
+                else               step_idx <= step_idx - 1'b1;
+            end
+        end
+    end
+
+    // 시퀀스 ROM
+    reg [3:0] patt;
+    always @(*) begin
+        if (half_full) begin
+            case (step_idx)
+                3'd0: patt = 4'b1000;
+                3'd1: patt = 4'b1100;
+                3'd2: patt = 4'b0100;
+                3'd3: patt = 4'b0110;
+                3'd4: patt = 4'b0010;
+                3'd5: patt = 4'b0011;
+                3'd6: patt = 4'b0001;
+                3'd7: patt = 4'b1001;
+                default: patt = 4'b0000;
+            endcase
+        end else begin
+            case (step_idx[1:0])
+                2'd0: patt = 4'b1100;
+                2'd1: patt = 4'b0110;
+                2'd2: patt = 4'b0011;
+                2'd3: patt = 4'b1001;
+                default: patt = 4'b0000;
+            endcase
+        end
+    end
+
+    assign coils = run_clean ? patt : 4'b0000;
+
+endmodule
+
+// ---------------------- debounce ----------------------
+module debounce #(
+    parameter integer CLK_HZ = 125_000_000,
+    parameter integer MS     = 10
+)(
+    input  wire clk,
+    input  wire rst_n,
+    input  wire din,
+    output reg  dout
+);
+    localparam integer CNT_MAX = (CLK_HZ/1250)*MS;
+    reg din_q1, din_q2;
+    reg [31:0] cnt;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            din_q1 <= 1'b0;
+            din_q2 <= 1'b0;
+        end else begin
+            din_q1 <= din;
+            din_q2 <= din_q1;
+        end
+    end
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            cnt  <= 0;
+            dout <= 0;
+        end else if (din_q2 == dout) begin
+            cnt <= 0;
+        end else begin
+            if (cnt >= CNT_MAX) begin
+                dout <= din_q2;
+                cnt  <= 0;
+            end else begin
+                cnt <= cnt + 1;
+            end
+        end
+    end
+endmodule
+
+```
 
 
+```xdc
+set_property -dict { PACKAGE_PIN V12   IOSTANDARD LVCMOS33 } [get_ports { coils[0] }]; #IO_L4P_T0_34 Sch=je[1]						 
+set_property -dict { PACKAGE_PIN W16   IOSTANDARD LVCMOS33 } [get_ports { coils[1] }]; #IO_L18N_T2_34 Sch=je[2]                     
+set_property -dict { PACKAGE_PIN J15   IOSTANDARD LVCMOS33 } [get_ports { coils[2] }]; #IO_25_35 Sch=je[3]                          
+set_property -dict { PACKAGE_PIN H15   IOSTANDARD LVCMOS33 } [get_ports { coils[3] }]; #IO_L19P_T3_35 Sch=je[4]
+```
+
+
+```shc
+# GPIO export (LED0 = GPIO 1020 가정)
+echo 1020 > /sys/class/gpio/export
+echo 1021 > /sys/class/gpio/export
+echo 1022 > /sys/class/gpio/export
+echo 1023 > /sys/class/gpio/export
+
+# 출력 모드 설정
+echo out > /sys/class/gpio/gpio1020/direction
+echo out > /sys/class/gpio/gpio1021/direction
+echo out > /sys/class/gpio/gpio1022/direction
+echo out > /sys/class/gpio/gpio1023/direction
+
+
+# LED 켜기
+echo 1 > /sys/class/gpio/gpio1020/value
+echo 1 > /sys/class/gpio/gpio1021/value
+echo 1 > /sys/class/gpio/gpio1022/value
+echo 1 > /sys/class/gpio/gpio1023/value
+
+# LED 끄기
+echo 0 > /sys/class/gpio/gpio1020/value
+echo 0 > /sys/class/gpio/gpio1021/value
+echo 0 > /sys/class/gpio/gpio1022/value
+echo 0 > /sys/class/gpio/gpio1023/value
+
+# GPIO unexport
+echo 1020 > /sys/class/gpio/unexport
+
+
+1020 - reset (0 : reset, 1 : unreset)
+1021 - run (0 : stop, 1: run)
+1022 - dir (0:frw, 1:back)
+1023 - half_full (0:half, 1: full)
+```
+
+```c
+// stepctl.c — Zybo Z7-20 + PetaLinux에서 sysfs GPIO(1020~1023)로 스텝모터 제어
+// 사용법: 보드의 UART 콘솔(ttyPS0)에서 ./stepctl 실행 후 명령 입력
+// 명령 예시: show / set run 1 / toggle dir / pulse reset 100 / watch 500 / quit
+
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <signal.h>
+#include <time.h>
+#include <sys/stat.h>
+
+typedef struct {
+    const char *name; // 논리명
+    int gpio;         // sysfs 번호
+    const char *desc; // 설명
+} gpio_map_t;
+
+static gpio_map_t gmap[] = {
+    {"reset",     1020, "0: reset(assert), 1: unreset(deassert)"},
+    {"run",       1021, "0: stop, 1: run"},
+    {"dir",       1022, "0: forward, 1: backward"},
+    {"half_full", 1023, "0: half-step, 1: full-step"},
+};
+static const int GMAP_N = sizeof(gmap)/sizeof(gmap[0]);
+
+static volatile sig_atomic_t g_stop = 0;
+static void on_sigint(int sig){ (void)sig; g_stop = 1; }
+
+static int write_str(const char *path, const char *s){
+    int fd = open(path, O_WRONLY);
+    if (fd < 0) return -errno;
+    ssize_t n = write(fd, s, strlen(s));
+    int rc = (n < 0) ? -errno : 0;
+    close(fd);
+    return rc;
+}
+static int read_str(const char *path, char *buf, size_t cap){
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return -errno;
+    ssize_t n = read(fd, buf, cap-1);
+    if (n < 0){ int e = -errno; close(fd); return e; }
+    buf[n] = '\0';
+    close(fd);
+    return 0;
+}
+static int path_exists(const char *path){
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+static int gpio_export_if_needed(int gpio){
+    char dirpath[128];
+    snprintf(dirpath, sizeof(dirpath), "/sys/class/gpio/gpio%d", gpio);
+    if (path_exists(dirpath)) return 0;
+    char num[16]; snprintf(num, sizeof(num), "%d", gpio);
+    int rc = write_str("/sys/class/gpio/export", num);
+    if (rc < 0 && rc != -EBUSY) return rc;
+    // sysfs가 생성될 때까지 잠깐 대기
+    for (int i=0; i<50; ++i){
+        if (path_exists(dirpath)) return 0;
+        usleep(20000);
+    }
+    return -ETIMEDOUT;
+}
+static int gpio_set_dir_out(int gpio){
+    char path[128];
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/direction", gpio);
+    return write_str(path, "out");
+}
+static int gpio_set_value(int gpio, int value){
+    char path[128], v[4];
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", gpio);
+    snprintf(v, sizeof(v), "%d", value ? 1 : 0);
+    return write_str(path, v);
+}
+static int gpio_get_value(int gpio, int *value){
+    char path[128], buf[16];
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", gpio);
+    int rc = read_str(path, buf, sizeof(buf));
+    if (rc < 0) return rc;
+    *value = (buf[0] == '1') ? 1 : 0;
+    return 0;
+}
+
+static gpio_map_t* find_gpio(const char *name){
+    for (int i=0;i<GMAP_N;i++)
+        if (strcmp(gmap[i].name, name)==0) return &gmap[i];
+    return NULL;
+}
+
+static void msleep(unsigned ms){
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (long)(ms % 1000) * 1000000L;
+    nanosleep(&ts, NULL);
+}
+
+static void print_header(void){
+    printf("\n=== Step Motor GPIO Control (sysfs) ===\n");
+    for (int i=0;i<GMAP_N;i++)
+        printf(" - %-9s : gpio%d  (%s)\n", gmap[i].name, gmap[i].gpio, gmap[i].desc);
+    printf("\n명령:\n");
+    printf("  show                      : 현재 상태 출력\n");
+    printf("  set <name> <0|1>          : 값 설정 (예: set run 1)\n");
+    printf("  toggle <name>             : 0/1 토글\n");
+    printf("  pulse <name> <ms> [level] : <level>(기본 1)로 <ms>ms 펄스\n");
+    printf("  watch <ms>                : <ms>주기로 상태 갱신 (Ctrl+C 종료)\n");
+    printf("  help                      : 도움말\n");
+    printf("  quit/exit                 : 종료\n\n");
+}
+
+static void cmd_show(void){
+    printf("\n[GPIO 상태]\n");
+    for (int i=0;i<GMAP_N;i++){
+        int v=-1;
+        int rc = gpio_get_value(gmap[i].gpio, &v);
+        if (rc==0) printf("  %-9s(gpio%-4d) = %d\n", gmap[i].name, gmap[i].gpio, v);
+        else printf("  %-9s(gpio%-4d) = <error %d>\n", gmap[i].name, gmap[i].gpio, rc);
+    }
+    printf("\n");
+}
+
+static int ensure_all_ready(void){
+    for (int i=0;i<GMAP_N;i++){
+        int rc = gpio_export_if_needed(gmap[i].gpio);
+        if (rc<0) {
+            fprintf(stderr, "gpio%d export 실패: %s\n", gmap[i].gpio, strerror(-rc));
+            return rc;
+        }
+        rc = gpio_set_dir_out(gmap[i].gpio);
+        if (rc<0) {
+            fprintf(stderr, "gpio%d direction=out 실패: %s\n", gmap[i].gpio, strerror(-rc));
+            return rc;
+        }
+    }
+    return 0;
+}
+
+int main(void){
+    signal(SIGINT, on_sigint);
+    signal(SIGTERM, on_sigint);
+
+    if (ensure_all_ready() < 0){
+        fprintf(stderr, "초기화 실패. root 권한 또는 디바이스 트리/퍼미션 확인 필요.\n");
+        return 1;
+    }
+
+    print_header();
+    cmd_show();
+
+    char line[256];
+    while (1){
+        printf("stepctl> ");
+        fflush(stdout);
+        if (!fgets(line, sizeof(line), stdin)) break;
+
+        // 공백/개행 정리
+        char *p = line;
+        while (*p==' '||*p=='\t') p++;
+        size_t L = strlen(p);
+        while (L>0 && (p[L-1]=='\n'||p[L-1]=='\r'||p[L-1]==' '||p[L-1]=='\t')) p[--L]=0;
+        if (L==0) continue;
+
+        if (!strcmp(p,"quit") || !strcmp(p,"exit")) break;
+        if (!strcmp(p,"help")) { print_header(); continue; }
+        if (!strcmp(p,"show")) { cmd_show(); continue; }
+
+        if (!strncmp(p,"set ",4)){
+            char name[32]; int val; 
+            if (sscanf(p+4, "%31s %d", name, &val)==2){
+                gpio_map_t *gm = find_gpio(name);
+                if (!gm){ printf("알 수 없는 name: %s\n", name); continue; }
+                if (val!=0 && val!=1){ printf("값은 0 또는 1\n"); continue; }
+                int rc = gpio_set_value(gm->gpio, val);
+                if (rc<0) printf("설정 실패: %s\n", strerror(-rc));
+                else cmd_show();
+            } else {
+                printf("형식: set <name> <0|1>\n");
+            }
+            continue;
+        }
+
+        if (!strncmp(p,"toggle ",7)){
+            char name[32];
+            if (sscanf(p+7, "%31s", name)==1){
+                gpio_map_t *gm = find_gpio(name);
+                if (!gm){ printf("알 수 없는 name: %s\n", name); continue; }
+                int v=0; int rc = gpio_get_value(gm->gpio, &v);
+                if (rc<0){ printf("읽기 실패: %s\n", strerror(-rc)); continue; }
+                rc = gpio_set_value(gm->gpio, !v);
+                if (rc<0) printf("설정 실패: %s\n", strerror(-rc));
+                else cmd_show();
+            } else {
+                printf("형식: toggle <name>\n");
+            }
+            continue;
+        }
+
+        if (!strncmp(p,"pulse ",6)){
+            char name[32]; int ms=0; int level=1;
+            int n = sscanf(p+6, "%31s %d %d", name, &ms, &level);
+            if (n>=2){
+                gpio_map_t *gm = find_gpio(name);
+                if (!gm){ printf("알 수 없는 name: %s\n", name); continue; }
+                if (ms<=0){ printf("ms는 양수여야 합니다\n"); continue; }
+                if (level!=0 && level!=1) level = 1;
+                int v_backup=0; 
+                if (gpio_get_value(gm->gpio, &v_backup)<0) v_backup=0;
+                if (gpio_set_value(gm->gpio, level)<0){ printf("설정 실패\n"); continue; }
+                msleep((unsigned)ms);
+                gpio_set_value(gm->gpio, v_backup);
+                cmd_show();
+            } else {
+                printf("형식: pulse <name> <ms> [level]\n");
+            }
+            continue;
+        }
+
+        if (!strncmp(p,"watch ",6)){
+            int period_ms = 0;
+            if (sscanf(p+6, "%d", &period_ms)==1 && period_ms>=50){
+                printf("watch 시작 — %d ms 주기 (Ctrl+C 종료)\n", period_ms);
+                g_stop = 0;
+                while (!g_stop){
+                    cmd_show();
+                    msleep((unsigned)period_ms);
+                }
+                printf("watch 종료\n");
+            } else {
+                printf("형식: watch <ms>  (권장: >= 100)\n");
+            }
+            continue;
+        }
+
+        printf("알 수 없는 명령입니다. help 를 입력해 보세요.\n");
+    }
+
+    printf("종료합니다.\n");
+    return 0;
+}
+
+```
 
 
 
