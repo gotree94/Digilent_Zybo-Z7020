@@ -1049,7 +1049,7 @@ Review and Package → Re-Package IP
 * coils 포트를 "Make External"로 외부 포트 생성
 * Address Editor에서 적절한 주소 할당 (예: 0x43C0_0000)
 
-### 9. Software에서 제어 (PetaLinux/Bare-metal)
+### 9. Software에서 제어 (Bare-metal : Vitisc)
 
 ```c
 #define STEPPER_BASE_ADDR 0x43C00000
@@ -1074,6 +1074,128 @@ void stepper_set_direction(int cw) {
 }
 ```
 
+* Petalinux
+
+```c
+// stepper_test.c (PetaLinux User Application)
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
+#define STEPPER_BASE_ADDR 0x43C00000
+#define MAP_SIZE 0x1000  // 4KB
+
+// Global pointer
+volatile uint32_t *stepper_regs = NULL;
+
+int stepper_init(void) {
+    int fd;
+    void *mapped_base;
+    
+    // Open /dev/mem
+    fd = open("/dev/mem", O_RDWR | O_SYNC);
+    if (fd == -1) {
+        perror("Cannot open /dev/mem");
+        return -1;
+    }
+    
+    // Memory map
+    mapped_base = mmap(NULL, MAP_SIZE, PROT_READ | PROT_WRITE, 
+                       MAP_SHARED, fd, STEPPER_BASE_ADDR);
+    
+    if (mapped_base == MAP_FAILED) {
+        perror("mmap failed");
+        close(fd);
+        return -1;
+    }
+    
+    stepper_regs = (volatile uint32_t *)mapped_base;
+    close(fd);  // Can close fd after mmap
+    
+    return 0;
+}
+
+void stepper_cleanup(void) {
+    if (stepper_regs != NULL) {
+        munmap((void *)stepper_regs, MAP_SIZE);
+        stepper_regs = NULL;
+    }
+}
+
+// Control functions
+void stepper_start(void) {
+    stepper_regs[0] |= 0x02;  // CTRL_REG (offset 0x00)
+}
+
+void stepper_stop(void) {
+    stepper_regs[0] &= ~0x02;
+}
+
+void stepper_set_direction(int cw) {
+    if (cw)
+        stepper_regs[0] |= 0x04;
+    else
+        stepper_regs[0] &= ~0x04;
+}
+
+void stepper_set_half_step(int enable) {
+    if (enable)
+        stepper_regs[0] |= 0x08;
+    else
+        stepper_regs[0] &= ~0x08;
+}
+
+uint32_t stepper_get_status(void) {
+    return stepper_regs[1];  // STATUS_REG (offset 0x04)
+}
+
+int main(int argc, char **argv) {
+    printf("Stepper Motor Test (PetaLinux)\n");
+    
+    // Initialize
+    if (stepper_init() < 0) {
+        fprintf(stderr, "Failed to initialize stepper\n");
+        return 1;
+    }
+    
+    // Stop motor first
+    stepper_stop();
+    
+    // Start motor CW, full-step
+    printf("Starting motor (CW, Full-step)...\n");
+    stepper_set_direction(1);
+    stepper_set_half_step(0);
+    stepper_start();
+    
+    sleep(3);  // Run for 3 seconds
+    
+    // Change to CCW, half-step
+    printf("Changing to CCW, Half-step...\n");
+    stepper_set_direction(0);
+    stepper_set_half_step(1);
+    
+    sleep(3);
+    
+    // Stop
+    printf("Stopping motor...\n");
+    stepper_stop();
+    
+    // Read status
+    printf("Final status: 0x%08X\n", stepper_get_status());
+    
+    // Cleanup
+    stepper_cleanup();
+    
+    return 0;
+}
+```
+
+```
+arm-linux-gnueabihf-gcc stepper_test.c -o stepper_test
+```
 
 
 
