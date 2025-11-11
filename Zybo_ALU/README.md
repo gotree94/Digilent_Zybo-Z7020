@@ -137,6 +137,9 @@ endmodule
 `alu_test.c` — `/dev/mem` 접근 예제
 
 ```bash
+# 컴파일 (PC 에서)
+arm-linux-gnueabihf-gcc -o alu_test alu_test.c
+
 # 컴파일 (보드 안에서)
 gcc -O2 -Wall -o alu_test alu_test.c
 ```
@@ -167,10 +170,6 @@ PetaLinux에서 커널 드라이버를 만들지 않고도 **AXI-Lite 레지스�
 - 쓰기: `*(base + REG0/4) = value`  
 - 읽기: `result = *(base + REG1/4)`  
 - `sudo` 권한 필요
-
-```
-arm-linux-gnueabihf-gcc -o alu_test alu_test.c
-```
 
 ---
 
