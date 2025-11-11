@@ -1216,6 +1216,214 @@ int main(int argc, char **argv) {
 ```
 arm-linux-gnueabihf-gcc stepper_test.c -o stepper_test
 ```
+* 리셋 관련 문제 있음.
+
+
+* 리셋 관련 문제 해결.
+```
+// stepper_test.c (PetaLinux User Application)
+// Fixed version with proper reset initialization
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
+#define STEPPER_BASE_ADDR 0x43C00000
+#define MAP_SIZE 0x1000  // 4KB
+
+// Register offsets
+#define CTRL_REG_OFFSET   0  // 0x00
+#define STATUS_REG_OFFSET 1  // 0x04
+#define SPEED_REG_OFFSET  2  // 0x08
+
+// Control register bit positions
+#define CTRL_RESET_N      (1 << 0)  // Bit 0: Reset (active high in register)
+#define CTRL_RUN          (1 << 1)  // Bit 1: Run/Stop
+#define CTRL_DIR          (1 << 2)  // Bit 2: Direction (1=CW, 0=CCW)
+#define CTRL_HALF_STEP    (1 << 3)  // Bit 3: Half-step mode
+
+// Global pointer
+volatile uint32_t *stepper_regs = NULL;
+
+int stepper_init(void) {
+    int fd;
+    void *mapped_base;
+    
+    printf("Initializing stepper motor controller...\n");
+    
+    // Open /dev/mem
+    fd = open("/dev/mem", O_RDWR | O_SYNC);
+    if (fd == -1) {
+        perror("Cannot open /dev/mem");
+        printf("  Hint: Try running with sudo\n");
+        return -1;
+    }
+    
+    // Memory map
+    mapped_base = mmap(NULL, MAP_SIZE, PROT_READ | PROT_WRITE, 
+                       MAP_SHARED, fd, STEPPER_BASE_ADDR);
+    
+    if (mapped_base == MAP_FAILED) {
+        perror("mmap failed");
+        close(fd);
+        return -1;
+    }
+    
+    stepper_regs = (volatile uint32_t *)mapped_base;
+    close(fd);  // Can close fd after mmap
+    
+    printf("  Memory mapped at: %p\n", (void *)stepper_regs);
+    
+    // ===== CRITICAL: Initialize reset signal =====
+    printf("  Performing hardware reset...\n");
+    
+    // Step 1: Assert reset (clear reset bit)
+    stepper_regs[CTRL_REG_OFFSET] = 0x00000000;  // All bits low, including reset
+    usleep(10000);  // Hold reset for 10ms
+    
+    // Step 2: Deassert reset (set reset bit)
+    stepper_regs[CTRL_REG_OFFSET] = CTRL_RESET_N;  // Release reset, motor stopped
+    usleep(10000);  // Wait for reset to complete
+    
+    printf("  Reset complete. Motor ready.\n");
+    
+    return 0;
+}
+
+void stepper_cleanup(void) {
+    if (stepper_regs != NULL) {
+        // Stop motor before cleanup
+        stepper_regs[CTRL_REG_OFFSET] = CTRL_RESET_N;  // Keep reset high, stop motor
+        munmap((void *)stepper_regs, MAP_SIZE);
+        stepper_regs = NULL;
+        printf("Cleanup complete.\n");
+    }
+}
+
+// Control functions
+void stepper_start(void) {
+    uint32_t reg = stepper_regs[CTRL_REG_OFFSET];
+    reg |= CTRL_RUN;
+    stepper_regs[CTRL_REG_OFFSET] = reg;
+    printf("  Motor started (CTRL_REG: 0x%08X)\n", reg);
+}
+
+void stepper_stop(void) {
+    uint32_t reg = stepper_regs[CTRL_REG_OFFSET];
+    reg &= ~CTRL_RUN;
+    stepper_regs[CTRL_REG_OFFSET] = reg;
+    printf("  Motor stopped (CTRL_REG: 0x%08X)\n", reg);
+}
+
+void stepper_set_direction(int cw) {
+    uint32_t reg = stepper_regs[CTRL_REG_OFFSET];
+    if (cw)
+        reg |= CTRL_DIR;
+    else
+        reg &= ~CTRL_DIR;
+    stepper_regs[CTRL_REG_OFFSET] = reg;
+    printf("  Direction: %s (CTRL_REG: 0x%08X)\n", cw ? "CW" : "CCW", reg);
+}
+
+void stepper_set_half_step(int enable) {
+    uint32_t reg = stepper_regs[CTRL_REG_OFFSET];
+    if (enable)
+        reg |= CTRL_HALF_STEP;
+    else
+        reg &= ~CTRL_HALF_STEP;
+    stepper_regs[CTRL_REG_OFFSET] = reg;
+    printf("  Step mode: %s (CTRL_REG: 0x%08X)\n", 
+           enable ? "Half-step" : "Full-step", reg);
+}
+
+void stepper_set_speed(uint32_t steps_per_sec) {
+    stepper_regs[SPEED_REG_OFFSET] = steps_per_sec;
+    printf("  Speed set to: %u steps/sec\n", steps_per_sec);
+}
+
+uint32_t stepper_get_status(void) {
+    return stepper_regs[STATUS_REG_OFFSET];  // STATUS_REG (offset 0x04)
+}
+
+uint32_t stepper_get_control(void) {
+    return stepper_regs[CTRL_REG_OFFSET];
+}
+
+void stepper_print_status(void) {
+    uint32_t ctrl = stepper_get_control();
+    uint32_t status = stepper_get_status();
+    
+    printf("\n--- Stepper Status ---\n");
+    printf("Control Register: 0x%08X\n", ctrl);
+    printf("  Reset:     %s\n", (ctrl & CTRL_RESET_N) ? "Released" : "ASSERTED");
+    printf("  Run:       %s\n", (ctrl & CTRL_RUN) ? "Running" : "Stopped");
+    printf("  Direction: %s\n", (ctrl & CTRL_DIR) ? "CW" : "CCW");
+    printf("  Step Mode: %s\n", (ctrl & CTRL_HALF_STEP) ? "Half-step" : "Full-step");
+    printf("Status Register: 0x%08X\n", status);
+    printf("  Coils: [%d%d%d%d]\n", 
+           (status >> 3) & 1, (status >> 2) & 1, 
+           (status >> 1) & 1, (status >> 0) & 1);
+    printf("----------------------\n\n");
+}
+
+int main(int argc, char **argv) {
+    printf("\n");
+    printf("========================================\n");
+    printf("  Stepper Motor Test (PetaLinux)\n");
+    printf("  Base Address: 0x%08X\n", STEPPER_BASE_ADDR);
+    printf("========================================\n\n");
+    
+    // Initialize
+    if (stepper_init() < 0) {
+        fprintf(stderr, "Failed to initialize stepper\n");
+        return 1;
+    }
+    
+    // Initial status
+    stepper_print_status();
+    
+    // Test sequence 1: CW, Full-step
+    printf("Test 1: CW rotation, Full-step mode\n");
+    stepper_set_direction(1);      // CW
+    stepper_set_half_step(0);      // Full-step
+    stepper_start();
+    
+    sleep(3);  // Run for 3 seconds
+    stepper_print_status();
+    
+    // Test sequence 2: CCW, Half-step
+    printf("Test 2: CCW rotation, Half-step mode\n");
+    stepper_set_direction(0);      // CCW
+    stepper_set_half_step(1);      // Half-step
+    
+    sleep(3);  // Run for 3 seconds
+    stepper_print_status();
+    
+    // Test sequence 3: CW, Full-step, faster
+    printf("Test 3: CW rotation, Full-step, 1200 steps/sec\n");
+    stepper_set_direction(1);      // CW
+    stepper_set_half_step(0);      // Full-step
+    stepper_set_speed(1200);       // Faster
+    
+    sleep(2);  // Run for 2 seconds
+    stepper_print_status();
+    
+    // Stop motor
+    printf("Stopping motor...\n");
+    stepper_stop();
+    stepper_print_status();
+    
+    // Cleanup
+    stepper_cleanup();
+    
+    printf("Test completed successfully!\n\n");
+    
+    return 0;
+}
+```
 
 50MHz Motor controller
 
