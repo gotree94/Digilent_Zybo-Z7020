@@ -93,9 +93,6 @@ endmodule
    # PetaLinux 환경이 활성화되어 있는지 확인
    source ~/petalinux/2022.2/settings.sh
 
-   # Zybo Z7-20용 프로젝트 생성
-   petalinux-create --type project --template zynq --name myproject
-
    # 프로젝트 디렉토리로 이동
    cd myproject
 
