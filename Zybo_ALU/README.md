@@ -340,11 +340,97 @@ echo 0 > /sys/devices/platform/amba/43c00000.alu/opcode
   - Linux 커널 드라이버
   - 테스트 프로그램
 
-## 연락처
+## Zybo Z7-20을 위한 ALU AXI 프로젝트가 완성되었습니다. 총 13개의 핵심 파일이 생성되었습니다.
 
-질문이나 문제가 있으면 이슈를 등록해 주세요.
+📦 생성된 주요 파일
+🔧 하드웨어 (HDL)
+   1. hdl/alu.v - 원본 8비트 ALU 모듈
+   2. hdl/alu_axi_lite_v1_0.v - AXI-Lite 인터페이스 래퍼 (250 lines)
 
----
-**프로젝트 상태:** ✅ 완료  
-**테스트 상태:** ✅ 통과  
-**문서 상태:** ✅ 최신
+⚙️ Vivado 자동화
+   3. tcl/create_project.tcl - 프로젝트 자동 생성 스크립트
+
+💻 소프트웨어
+  4. sw/alu_driver.c - Linux 커널 드라이버 (sysfs 지원)
+  5. sw/alu-overlay.dts - 디바이스 트리 오버레이
+  6. sw/alu_test_devmem.c - 직접 메모리 접근 테스트 프로그램
+  7. sw/alu_test_sysfs.c - Sysfs 인터페이스 테스트 프로그램
+  8. sw/alu_test.sh - 쉘 스크립트 유틸리티
+  9. sw/Makefile - 빌드 스크립트
+
+📚 문서
+  10. README.md - 프로젝트 메인 문서
+  11. docs/QUICKSTART.md - 빠른 시작 가이드
+  12. docs/PETALINUX_SETUP.md - 상세 PetaLinux 설정
+  13. docs/PROJECT_FILES.md - 파일 목록 및 설명
+
+🎯 주요 기능
+  * ALU 연산:
+
+✅ 덧셈 (ADD)
+✅ 뺄셈 (SUB)
+✅ 곱셈 (MUL)
+✅ 나눗셈 (DIV)
+✅ 나머지 (MOD)
+✅ 같음 비교 (EQ)
+✅ 크기 비교 (GT, LT)
+
+  * 인터페이스:
+
+✅ AXI-Lite 슬레이브 인터페이스
+✅ 4개의 32비트 레지스터 (0x43C00000)
+✅ Linux 커널 드라이버
+✅ Sysfs 인터페이스
+✅ /dev/mem 직접 접근
+
+🚀 사용 방법
+* 1단계: Vivado 프로젝트 생성
+```bash
+cd tcl
+vivado -mode tcl -source create_project.tcl
+# Generate Bitstream 후 Hardware Export
+```
+
+2단계: PetaLinux 빌드
+```bash
+# 자세한 내용은 docs/PETALINUX_SETUP.md 참조
+petalinux-create --type project --template zynq --name petalinux_alu
+# ... (드라이버 및 앱 추가)
+petalinux-build
+```
+
+3단계: 보드에서 테스트
+```bash
+# 전체 테스트
+alu_test_devmem -t
+
+# 단일 연산 (25 + 5)
+alu_test_devmem -c 25 5 0
+
+# 인터랙티브 모드
+alu_test_devmem -i
+
+# 빠른 테스트
+sudo ./alu_test.sh test
+```
+
+📊 레지스터 맵
+| 주소 |  레지스터 |  설명 | 
+|:-------:|:--------:|:-------:| 
+| 0x43C00000 | OPERAND_A |  8비트 피연산자 A (R/W)| 
+| 0x43C00004 | OPERAND_B |  8비트 피연산자 B (R/W)| 
+| 0x43C00008 | CONTROL |  연산 코드[2:0] + Enable[3] (R/W)| 
+| 0x43C0000C| RESULT16비트 | 결과 (R)| 
+
+📖 문서 구성
+*README.md - 프로젝트 전체 개요, 아키텍처, 사용 예제
+*QUICKSTART.md - 5분 안에 시작하는 가이드
+*PETALINUX_SETUP.md - 단계별 상세 설정 (10 스텝)
+*PROJECT_FILES.md - 모든 파일 설명 및 의존성
+
+⚡ 특징
+*완전한 턴키 솔루션: HDL부터 C 프로그램까지 모두 포함
+*이중 접근 방식: Sysfs 및 직접 메모리 접근 지원
+*자동화 스크립트: Vivado TCL 스크립트로 원클릭 생성
+*상세한 문서: 초보자도 따라할 수 있는 단계별 가이드
+*테스트 유틸리티: 쉘 스크립트, C 프로그램 다양한 테스트 도구
