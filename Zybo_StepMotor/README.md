@@ -980,6 +980,445 @@ module stepper_motor_ctrl_v1_0 #(
 
 endmodule
 ```
+---
+=======================================================
+# 변경된 내용 비굧
+=======================================================
+## 1. stepper_motor_ctrl_v1_0.v
+
+# stepper_motor_ctrl_v1_0.v 파일 변경 내역
+
+## 📋 전체 요약
+
+- **파일명**: `stepper_motor_ctrl_v1_0.v`
+- **원본**: `stepper_motor_ctrl_v1_0-org.v`
+- **총 변경 라인 수**: 2줄 추가
+- **변경 유형**: User port 추가 및 연결
+- **목적**: Stepper motor coil 출력을 외부 핀으로 노출
+
+---
+
+## 📝 상세 변경 내역
+
+### 1️⃣ User Port 추가 (Line 18)
+
+#### ✅ 추가된 내용
+```verilog
+// Line 17-19 (수정 후)
+// Users to add ports here
+output wire [3:0] coils,
+// User ports ends
+```
+
+#### ❌ 원본
+```verilog
+// Line 17-19 (원본)
+// Users to add ports here
+
+// User ports ends
+```
+
+**변경 사항:**
+- 모듈의 포트 리스트에 `coils` 출력 포트 추가
+- 4-bit width의 wire 타입 출력
+- ULN2003 드라이버의 4개 coil 신호를 외부로 노출
+
+**의미:**
+- Block Design에서 이 포트를 "Make External"하여 FPGA 핀으로 연결 가능
+- Pmod 커넥터 등을 통해 실제 stepper motor로 신호 출력
+
+---
+
+### 2️⃣ AXI Interface 인스턴스에 User Port 연결 (Line 72)
+
+#### ✅ 추가된 내용
+```verilog
+// Line 71-72 (수정 후)
+.S_AXI_RREADY(s00_axi_rready),
+.coils_out(coils)  // Connect user port
+```
+
+#### ❌ 원본
+```verilog
+// Line 71 (원본)
+.S_AXI_RREADY(s00_axi_rready)
+```
+
+**변경 사항:**
+- AXI Interface 모듈의 `coils_out` 신호를 top-level의 `coils` 포트에 연결
+- 내부 모듈에서 생성된 coil 제어 신호를 외부로 전달하는 경로 생성
+
+**의미:**
+- AXI Interface 내부의 stepper motor controller가 생성한 신호가 최종적으로 외부 포트로 출력됨
+- Top wrapper는 단순히 신호를 연결만 하는 역할
+
+---
+
+## 📊 변경 전후 비교표
+
+| 항목 | 원본 | 수정 후 | 변경 내용 |
+|------|------|---------|----------|
+| **Module Port 수** | AXI 신호만 (20개) | AXI 신호 + coils (21개) | +1 포트 |
+| **User Port** | 없음 | `output wire [3:0] coils` | 추가 |
+| **AXI Instance 연결** | AXI 신호만 | AXI 신호 + `.coils_out(coils)` | +1 연결 |
+| **외부 가시성** | 내부만 동작 | 외부 핀 연결 가능 | ✅ |
+
+---
+
+## 🔄 신호 흐름
+
+### 원본 (수정 전)
+```
+ZYNQ PS → AXI Bus → stepper_motor_ctrl_v1_0_S00_AXI
+                     └─ zybo_z720_stepper_top
+                        └─ coils[3:0] (내부에서 끝)
+                           ❌ 외부 접근 불가
+```
+
+### 수정 후
+```
+ZYNQ PS → AXI Bus → stepper_motor_ctrl_v1_0_S00_AXI
+                     └─ zybo_z720_stepper_top
+                        └─ coils_out[3:0]
+                           └─ Top Module coils[3:0]
+                              └─ 외부 포트 (Pmod 핀)
+                                 ✅ 실제 모터 연결
+```
+
+---
+
+## 💡 수정의 의도
+
+### 목적
+1. **외부 연결성 제공**: 내부 로직의 출력을 FPGA 핀으로 노출
+2. **Block Design 통합**: Vivado Block Design에서 "Make External" 기능 사용 가능
+3. **하드웨어 테스트**: 실제 stepper motor와 연결하여 동작 검증
+
+### 설계 패턴
+이것은 **AXI Peripheral IP의 표준 패턴**입니다:
+
+```verilog
+// Top Wrapper = Interface Definition (껍데기)
+module ip_top (
+    // AXI ports (표준 인터페이스)
+    input  wire axi_clk,
+    output wire axi_data,
+    
+    // User ports (커스텀 기능)
+    output wire [3:0] custom_output  ← 추가된 부분
+);
+
+    // Internal module instantiation
+    ip_axi_interface inst (
+        .axi_clk(axi_clk),
+        .axi_data(axi_data),
+        .custom_out(custom_output)  ← 연결 추가
+    );
+
+endmodule
+```
+
+---
+
+## 🔍 라인별 상세 비교
+
+### Line 18 비교
+
+**원본 (Line 17-19):**
+```verilog
+		// Users to add ports here
+
+		// User ports ends
+```
+
+**수정 후 (Line 17-19):**
+```verilog
+		// Users to add ports here
+		output wire [3:0] coils,
+		// User ports ends
+```
+
+**차이점:**
+- ✅ `output wire [3:0] coils,` 추가
+- 4-bit output port 선언
+- 외부 신호 인터페이스 추가
+
+---
+
+### Line 72 비교
+
+**원본 (Line 64-71):**
+```verilog
+		.S_AXI_ARADDR(s00_axi_araddr),
+		.S_AXI_ARPROT(s00_axi_arprot),
+		.S_AXI_ARVALID(s00_axi_arvalid),
+		.S_AXI_ARREADY(s00_axi_arready),
+		.S_AXI_RDATA(s00_axi_rdata),
+		.S_AXI_RRESP(s00_axi_rresp),
+		.S_AXI_RVALID(s00_axi_rvalid),
+		.S_AXI_RREADY(s00_axi_rready)
+	);
+```
+
+**수정 후 (Line 64-73):**
+```verilog
+		.S_AXI_ARADDR(s00_axi_araddr),
+		.S_AXI_ARPROT(s00_axi_arprot),
+		.S_AXI_ARVALID(s00_axi_arvalid),
+		.S_AXI_ARREADY(s00_axi_arready),
+		.S_AXI_RDATA(s00_axi_rdata),
+		.S_AXI_RRESP(s00_axi_rresp),
+		.S_AXI_RVALID(s00_axi_rvalid),
+		.S_AXI_RREADY(s00_axi_rready),
+		.coils_out(coils)  // Connect user port
+	);
+```
+
+**차이점:**
+- ✅ `.coils_out(coils)` 추가
+- 내부 신호를 외부 포트에 연결
+- 주석 추가: `// Connect user port`
+
+---
+
+## ✅ 검증 포인트
+
+### 수정 후 확인 사항
+
+#### 1. Syntax 체크
+```tcl
+# Vivado에서 확인
+check_syntax
+
+# 예상 결과: No syntax errors
+```
+
+#### 2. Block Design 체크
+```
+IP를 Block Design에 추가 후:
+✓ coils[3:0] 포트가 보이는가?
+✓ "Make External" 가능한가?
+✓ 외부 포트 생성 시 constraints에 추가되는가?
+```
+
+#### 3. Port 연결 확인
+```verilog
+// 내부 모듈이 coils_out을 제공해야 함
+// stepper_motor_ctrl_v1_0_S00_AXI.v에 다음이 필요:
+module stepper_motor_ctrl_v1_0_S00_AXI (
+    output wire [3:0] coils_out,  // ← 이 신호 필요
+    // ... AXI ports
+);
+```
+
+---
+
+## 🔧 Constraints 파일 예시
+
+### XDC 파일 설정
+```tcl
+# Stepper motor coil outputs - Pmod JE
+set_property PACKAGE_PIN V12 [get_ports {coils[0]}]
+set_property PACKAGE_PIN W16 [get_ports {coils[1]}]
+set_property PACKAGE_PIN J15 [get_ports {coils[2]}]
+set_property PACKAGE_PIN H15 [get_ports {coils[3]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {coils[*]}]
+
+# Optional: Drive strength
+set_property DRIVE 12 [get_ports {coils[*]}]
+
+# Optional: Slew rate
+set_property SLEW FAST [get_ports {coils[*]}]
+```
+
+---
+
+## 📦 전체 파일 구조
+
+### 수정된 IP 구조
+```
+stepper_motor_ctrl_1.0/
+├── component.xml
+├── xgui/
+└── hdl/
+    ├── stepper_motor_ctrl_v1_0.v              ← 이 파일 (수정 완료)
+    │   ├── Line 18: output wire [3:0] coils   ← 추가
+    │   └── Line 72: .coils_out(coils)         ← 추가
+    │
+    ├── stepper_motor_ctrl_v1_0_S00_AXI.v      (수정 필요)
+    │   └── coils_out 포트 및 로직 추가 필요
+    │
+    ├── zybo_z720_stepper_top.v                (변경 없음)
+    └── debounce.v                             (변경 없음)
+```
+
+---
+
+## 🎯 다음 단계
+
+### 완료된 작업
+- ✅ Top wrapper에 user port 추가
+- ✅ AXI interface 인스턴스 연결
+
+### 추가 작업 필요
+1. ⚠️ `stepper_motor_ctrl_v1_0_S00_AXI.v` 수정
+   - `coils_out` 포트 추가
+   - Stepper controller 인스턴스화
+   - Control/Status 레지스터 연결
+
+2. ⚠️ IP 패키징
+   - File Groups에 모든 소스 파일 추가
+   - Ports and Interfaces 확인
+   - Re-package IP
+
+3. ⚠️ Block Design 통합
+   - IP Catalog에 추가
+   - Block Design에서 사용
+   - coils 포트를 Make External
+   - Constraints 파일 작성
+
+---
+
+## 📌 핵심 요약
+
+| 수정 항목 | 변경 내용 | 코드 |
+|----------|----------|------|
+| **포트 추가** | 4-bit coils 출력 포트 | `output wire [3:0] coils,` |
+| **포트 연결** | AXI interface와 연결 | `.coils_out(coils)` |
+| **목적** | 외부 핀 노출 | Block Design → FPGA Pin |
+| **영향** | 실제 하드웨어 연결 가능 | ✅ |
+
+---
+
+## 💻 완전한 수정 코드
+
+### 전체 모듈 (수정 후)
+```verilog
+`timescale 1 ns / 1 ps
+
+module stepper_motor_ctrl_v1_0 #
+(
+    // Users to add parameters here
+
+    // User parameters ends
+    // Do not modify the parameters beyond this line
+
+
+    // Parameters of Axi Slave Bus Interface S00_AXI
+    parameter integer C_S00_AXI_DATA_WIDTH	= 32,
+    parameter integer C_S00_AXI_ADDR_WIDTH	= 4
+)
+(
+    // Users to add ports here
+    output wire [3:0] coils,                          // ← 추가!
+    // User ports ends
+    // Do not modify the ports beyond this line
+
+
+    // Ports of Axi Slave Bus Interface S00_AXI
+    input wire  s00_axi_aclk,
+    input wire  s00_axi_aresetn,
+    input wire [C_S00_AXI_ADDR_WIDTH-1 : 0] s00_axi_awaddr,
+    input wire [2 : 0] s00_axi_awprot,
+    input wire  s00_axi_awvalid,
+    output wire  s00_axi_awready,
+    input wire [C_S00_AXI_DATA_WIDTH-1 : 0] s00_axi_wdata,
+    input wire [(C_S00_AXI_DATA_WIDTH/8)-1 : 0] s00_axi_wstrb,
+    input wire  s00_axi_wvalid,
+    output wire  s00_axi_wready,
+    output wire [1 : 0] s00_axi_bresp,
+    output wire  s00_axi_bvalid,
+    input wire  s00_axi_bready,
+    input wire [C_S00_AXI_ADDR_WIDTH-1 : 0] s00_axi_araddr,
+    input wire [2 : 0] s00_axi_arprot,
+    input wire  s00_axi_arvalid,
+    output wire  s00_axi_arready,
+    output wire [C_S00_AXI_DATA_WIDTH-1 : 0] s00_axi_rdata,
+    output wire [1 : 0] s00_axi_rresp,
+    output wire  s00_axi_rvalid,
+    input wire  s00_axi_rready
+);
+
+// Instantiation of Axi Bus Interface S00_AXI
+stepper_motor_ctrl_v1_0_S00_AXI # ( 
+    .C_S_AXI_DATA_WIDTH(C_S00_AXI_DATA_WIDTH),
+    .C_S_AXI_ADDR_WIDTH(C_S00_AXI_ADDR_WIDTH)
+) stepper_motor_ctrl_v1_0_S00_AXI_inst (
+    .S_AXI_ACLK(s00_axi_aclk),
+    .S_AXI_ARESETN(s00_axi_aresetn),
+    .S_AXI_AWADDR(s00_axi_awaddr),
+    .S_AXI_AWPROT(s00_axi_awprot),
+    .S_AXI_AWVALID(s00_axi_awvalid),
+    .S_AXI_AWREADY(s00_axi_awready),
+    .S_AXI_WDATA(s00_axi_wdata),
+    .S_AXI_WSTRB(s00_axi_wstrb),
+    .S_AXI_WVALID(s00_axi_wvalid),
+    .S_AXI_WREADY(s00_axi_wready),
+    .S_AXI_BRESP(s00_axi_bresp),
+    .S_AXI_BVALID(s00_axi_bvalid),
+    .S_AXI_BREADY(s00_axi_bready),
+    .S_AXI_ARADDR(s00_axi_araddr),
+    .S_AXI_ARPROT(s00_axi_arprot),
+    .S_AXI_ARVALID(s00_axi_arvalid),
+    .S_AXI_ARREADY(s00_axi_arready),
+    .S_AXI_RDATA(s00_axi_rdata),
+    .S_AXI_RRESP(s00_axi_rresp),
+    .S_AXI_RVALID(s00_axi_rvalid),
+    .S_AXI_RREADY(s00_axi_rready),
+    .coils_out(coils)  // Connect user port              // ← 추가!
+);
+
+    // Add user logic here
+
+    // User logic ends
+
+endmodule
+```
+
+---
+
+## 📚 참고 자료
+
+### AXI Interface 표준 문서
+- ARM AMBA AXI Protocol Specification
+- Xilinx AXI Reference Guide (UG1037)
+
+### Vivado IP 개발
+- Xilinx IP Packager User Guide (UG1118)
+- Creating and Packaging Custom IP (UG1119)
+
+---
+
+## 🔗 관련 문서
+
+1. `stepper_motor_ctrl_v1_0_S00_AXI.v` 수정 가이드
+2. IP 패키징 완전 가이드
+3. Block Design 통합 튜토리얼
+4. Zybo Z7-20 Constraints 파일 예시
+
+---
+
+**작성일**: 2025년 1월  
+**버전**: 1.0  
+**상태**: 수정 완료
+
+---
+
+## 결론
+
+**최소한의 수정 (2줄)으로 내부 신호를 외부로 노출시키는 표준적이고 효율적인 방법입니다!** ✅
+
+이 수정을 통해:
+- ✅ AXI Slave IP가 실제 하드웨어와 통신 가능
+- ✅ Block Design에서 유연한 연결 가능
+- ✅ 표준 IP 개발 패턴 준수
+- ✅ 향후 확장 및 유지보수 용이
+
+## 2. stepper_motor_ctrl_v1_0_S00_AXI.v
+
+=======================================================
+---
+
 ### 5. 확인하기
 
 ```
