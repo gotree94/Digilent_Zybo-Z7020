@@ -168,7 +168,12 @@ PetaLinux에서 커널 드라이버를 만들지 않고도 **AXI-Lite 레지스�
 - 읽기: `result = *(base + REG1/4)`  
 - `sudo` 권한 필요
 
+```
+arm-linux-gnueabihf-gcc -o alu_test alu_test.c
+```
+
 ---
+
 
 ## 🧩 6. 예상 동작 시나리오
 
