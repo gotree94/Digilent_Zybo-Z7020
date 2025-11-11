@@ -78,14 +78,43 @@ endmodule
 3. `File → Export → Export Hardware (Include Bitstream)`  
 4. PetaLinux 프로젝트 생성 및 하드웨어 가져오기:
    ```bash
-   petalinux-create -t project -n zybo_alu_petalinux --template zynq
-   cd zybo_alu_petalinux
-   petalinux-config --get-hw-description=<vivado_export_path>
+   cp /mnt/share/design_top_wrapper.xsa ~/projects/
+
+   unzip -l design_top_wrapper.xsa
+
+   cd ~/projects
+
+   # PetaLinux 환경이 활성화되어 있는지 확인
+   source ~/petalinux/2022.2/settings.sh
+
+   # Zybo Z7-20용 프로젝트 생성
+   petalinux-create --type project --template zynq --name myproject
+
+   # 프로젝트 디렉토리로 이동
+   cd myproject
+
+   # XSA 파일로 하드웨어 설정
+   petalinux-config --get-hw-description=~/projects/
+
+    # Root Filesystem 설정
+   petalinux-config -c rootfs
    ```
+   
 5. 빌드 및 부팅 이미지 생성:
    ```bash
    petalinux-build
-   petalinux-package --boot --fsbl images/linux/zynq_fsbl.elf                      --u-boot --fpga images/linux/system.bit
+
+   # 부트 이미지 생성 (BOOT.BIN)
+    petalinux-package --boot \
+    --fsbl images/linux/zynq_fsbl.elf \
+    --fpga images/linux/design_1_wrapper.bit \
+    --u-boot images/linux/u-boot.elf \
+    --force
+
+    # WIC 이미지 생성
+    petalinux-package --wic \
+    --bootfiles "BOOT.BIN image.ub boot.scr" \
+    --images-dir images/linux/
    ```
 
 ---
