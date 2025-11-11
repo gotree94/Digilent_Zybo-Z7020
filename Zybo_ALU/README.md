@@ -16,7 +16,6 @@ zybo_alu_project/
 │   └── alu.v                   # 간단한 산술연산 모듈
 ├── petalinux_app/
 │   ├── alu_test.c              # /dev/mem 접근용 C 테스트 프로그램
-│   └── Makefile (optional)
 └── README.md                   # (현재 문서)
 ```
 
