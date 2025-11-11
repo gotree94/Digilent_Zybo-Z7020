@@ -95,6 +95,9 @@ endmodule
     
     # 프로젝트 디렉토리로 이동
     cd myproject
+    
+    # XSA 파일로 하드웨어 설정
+    petalinux-config --get-hw-description=~/projects/
 
     petalinux-config -c rootfs
     ```
