@@ -214,10 +214,4 @@ PetaLinux에서 커널 드라이버를 만들지 않고도 **AXI-Lite 레지스�
 - [PetaLinux Reference Guide (UG1144)](https://docs.xilinx.com/)
 - [AXI4-Lite Template (Vivado)](https://xilinx.github.io/)
 
----
 
-## 🧑‍💻 Author
-**MultiMix Engineering**  
-- FPGA + Embedded + AI System Integration  
-- E-mail: info@multimix.co.kr  
-- GitHub: [github.com/multimix-labs](https://github.com/multimix-labs)
