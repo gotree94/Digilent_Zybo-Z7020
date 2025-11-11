@@ -431,3 +431,35 @@ sudo ./alu_test.sh test
   * 자동화 스크립트: Vivado TCL 스크립트로 원클릭 생성
   * 상세한 문서: 초보자도 따라할 수 있는 단계별 가이드
   * 테스트 유틸리티: 쉘 스크립트, C 프로그램 다양한 테스트 도구
+
+
+## 필요한 레지스터:
+  * OPERAND_A (8비트) - 입력
+  * OPERAND_B (8비트) - 입력
+  * OPCODE (3비트) - 입력
+  * ENABLE (1비트) - 입력
+  * RESULT (16비트) - 출력
+
+* 현재는 4개 레지스터만 할당했지만, 실제로는 더 효율적인 설계가 필요합니다.
+* 개선된 레지스터 맵 설계두 가지 옵션을 제안드립니다:
+
+* 옵션 1: 레지스터 병합 (현재 유지 - 4개 레지스터)
+```
+0x00: OPERAND_A [7:0]
+0x04: OPERAND_B [7:0]  
+0x08: CONTROL [3:0] = {enable, opcode[2:0]}
+0x0C: RESULT [15:0] (Read-Only)장점: 메모리 효율적, 주소 공간 절약
+```
+단점: 제어 레지스터가 좁음옵션
+
+* 2: 확장 레지스터 맵 (권장 - 8개 레지스터)
+```
+0x00: OPERAND_A [7:0]
+0x04: OPERAND_B [7:0]
+0x08: OPCODE [2:0]
+0x0C: CONTROL [31:0] = {reserved[30:1], enable}
+0x10: RESULT [15:0]
+0x14: STATUS [31:0] = {reserved[31:1], ready}
+0x18: VERSION [31:0] (Read-Only)
+0x1C: SCRATCH [31:0] (R/W test register)
+```
