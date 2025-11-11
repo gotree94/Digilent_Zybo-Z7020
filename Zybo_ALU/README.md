@@ -104,7 +104,8 @@ endmodule
    
 5. 빌드 및 부팅 이미지 생성:
     ```bash
-    petalinux-build -c fsbl-firmware -x cleansstate
+    petalinux-build -c fsbl-firmware -x cleansstate # 에러 발생시
+    petalinux-build -c device-tree -x cleansstate  # 에러 발생시
     petalinux-build
     
     # 부트 이미지 생성 (BOOT.BIN)
