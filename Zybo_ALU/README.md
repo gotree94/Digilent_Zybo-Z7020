@@ -164,6 +164,41 @@ sudo ./alu_test 0x43C00000 read
 [READ ] REG1=0x00000046 -> result=0x0046 (70)
 ```
 
+```
+root@myproject:~# ./alu_test
+Usage:
+  ./alu_test <baseaddr_hex> write a=<0xAA|dec> b=<0xBB|dec> opcode=<0..7> ena=<0|1>
+  ./alu_test <baseaddr_hex> read
+opcode
+0 plus 1 minus 2 multiply 3 devide 4 remain 5 compair 6 grather then 7 smaller then
+
+Examples:
+  ./alu_test 0x43C00000 write a=0x12 b=0x34 opcode=0 ena=1
+  ./alu_test 0x43C00000 read
+root@myproject:~# ./alu_test  ./alu_test 0x43C00000 write a=0x34 b=0x34 opcode=5 ena=1
+Invalid base address: ./alu_test
+root@myproject:~# ./alu_test 0x43C00000 write a=0x12 b=0x34 opcode=0 ena=1
+[WRITE] BASE=0x43C00000 REG0=0x12340008 (a=0x12 b=0x34 opcode=0 ena=1)
+[READ ] REG1=0x00000046  -> result=0x0046 (70)
+root@myproject:~# ./alu_test 0x43C00000 write a=0x34 b=0x34 opcode=5 ena=1
+[WRITE] BASE=0x43C00000 REG0=0x3434000D (a=0x34 b=0x34 opcode=5 ena=1)
+[READ ] REG1=0x00000001  -> result=0x0001 (1)
+root@myproject:~# ./alu_test 0x43C00000 write a=0x34 b=0x31 opcode=5 ena=1
+[WRITE] BASE=0x43C00000 REG0=0x3431000D (a=0x34 b=0x31 opcode=5 ena=1)
+[READ ] REG1=0x00000000  -> result=0x0000 (0)
+root@myproject:~# ./alu_test 0x43C00000 write a=0x34 b=0x31 opcode=6 ena=1
+[WRITE] BASE=0x43C00000 REG0=0x3431000E (a=0x34 b=0x31 opcode=6 ena=1)
+[READ ] REG1=0x00000001  -> result=0x0001 (1)
+root@myproject:~# ./alu_test 0x43C00000 write a=0x34 b=0x31 opcode=7 ena=1
+[WRITE] BASE=0x43C00000 REG0=0x3431000F (a=0x34 b=0x31 opcode=7 ena=1)
+[READ ] REG1=0x00000000  -> result=0x0000 (0)
+root@myproject:~# ./alu_test 0x43C00000 write a=0x34 b=0x31 opcode=1 ena=1
+[WRITE] BASE=0x43C00000 REG0=0x34310009 (a=0x34 b=0x31 opcode=1 ena=1)
+[READ ] REG1=0x00000003  -> result=0x0003 (3)
+root@myproject:~#
+```
+
+
 ---
 
 ## 🧰 5. /dev/mem 접근 원리
