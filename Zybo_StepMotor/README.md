@@ -2934,7 +2934,971 @@ module debounce #(
 endmodule
 ```
 
+---
 
+=========================================================
+
+---
+
+# Device Tree 수정 필요 여부 완전 가이드
+
+## 📋 문서 정보
+
+- **주제**: AXI GPIO vs Custom AXI Slave - Device Tree 수정 비교
+- **대상**: Zynq-7000 / PetaLinux 개발자
+- **작성일**: 2025년 1월
+- **버전**: 1.0
+
+---
+
+## 🎯 핵심 질문
+
+**Q: 이전에 AXI GPIO 사용 시 Device Tree를 수정했는데, 왜 지금은 안 하나요?**
+
+**A: Custom AXI Slave는 /dev/mem 직접 접근으로 충분하기 때문입니다!**
+
+---
+
+## 🔍 두 가지 접근 방법 비교
+
+### ✅ 방법 1: AXI GPIO + Device Tree 수정 (이전 방식)
+
+#### Hardware 구조
+```
+┌─────────────────────────────────────────┐
+│ Zynq PS (ARM Processor)                 │
+│                                         │
+│ M_AXI_GP0 (AXI4-Lite Master)           │
+└─────────────┬───────────────────────────┘
+              │ AXI Bus
+              ▼
+┌─────────────────────────────────────────┐
+│ AXI GPIO (Xilinx Standard IP)          │
+│ Base Address: 0x41200000                │
+│ Size: 0x1000                            │
+│                                         │
+│ Registers:                              │
+│ - GPIO_DATA  (0x00)                     │
+│ - GPIO_TRI   (0x04)                     │
+└─────────────┬───────────────────────────┘
+              │ gpio_io_o[3:0]
+              ▼
+      ┌───────────────────┐
+      │ Stepper Motor     │
+      │ (4 coils)         │
+      └───────────────────┘
+```
+
+#### Device Tree 설정
+```dts
+/include/ "system-conf.dtsi"
+
+/ {
+};
+
+&axi_gpio_0 {
+    compatible = "xlnx,xps-gpio-1.00.a";
+    gpio-controller;                    // ← Linux GPIO subsystem 사용
+    #gpio-cells = <2>;
+    xlnx,all-inputs = <0x0>;
+    xlnx,all-outputs = <0x1>;           // ← 모두 output으로 설정
+    xlnx,dout-default = <0x0>;
+    xlnx,gpio-width = <0x4>;            // ← 4-bit GPIO
+    xlnx,tri-default = <0xFFFFFFFF>;
+    xlnx,is-dual = <0>;
+};
+```
+
+#### Software 사용 방법 A: GPIO Subsystem (권장)
+```bash
+# Shell에서 GPIO 제어
+# GPIO 번호 확인 (보통 480+)
+cd /sys/class/gpio
+
+# GPIO export
+echo 480 > export
+echo 481 > export
+echo 482 > export
+echo 483 > export
+
+# Direction 설정
+echo out > gpio480/direction
+echo out > gpio481/direction
+echo out > gpio482/direction
+echo out > gpio483/direction
+
+# Motor control
+# Full-step: Coil AB
+echo 1 > gpio480/value  # A
+echo 1 > gpio481/value  # B
+echo 0 > gpio482/value  # C
+echo 0 > gpio483/value  # D
+```
+
+#### Software 사용 방법 B: C 프로그램 (GPIO API)
+```c
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#define GPIO_BASE 480
+
+void gpio_export(int pin) {
+    int fd = open("/sys/class/gpio/export", O_WRONLY);
+    char buf[4];
+    sprintf(buf, "%d", pin);
+    write(fd, buf, strlen(buf));
+    close(fd);
+}
+
+void gpio_direction(int pin, const char *dir) {
+    char path[64];
+    sprintf(path, "/sys/class/gpio/gpio%d/direction", pin);
+    int fd = open(path, O_WRONLY);
+    write(fd, dir, strlen(dir));
+    close(fd);
+}
+
+void gpio_write(int pin, int value) {
+    char path[64];
+    sprintf(path, "/sys/class/gpio/gpio%d/value", pin);
+    int fd = open(path, O_WRONLY);
+    char buf[2] = {value ? '1' : '0', '\0'};
+    write(fd, buf, 1);
+    close(fd);
+}
+
+int main() {
+    // Initialize GPIOs
+    for (int i = 0; i < 4; i++) {
+        gpio_export(GPIO_BASE + i);
+        gpio_direction(GPIO_BASE + i, "out");
+    }
+    
+    // Set coil pattern: AB (1100)
+    gpio_write(GPIO_BASE + 0, 1);  // A
+    gpio_write(GPIO_BASE + 1, 1);  // B
+    gpio_write(GPIO_BASE + 2, 0);  // C
+    gpio_write(GPIO_BASE + 3, 0);  // D
+    
+    return 0;
+}
+```
+
+#### Software 사용 방법 C: 직접 메모리 접근
+```c
+#include <stdio.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <stdint.h>
+
+#define GPIO_BASE_ADDR 0x41200000
+#define MAP_SIZE 0x1000
+
+int main() {
+    int fd = open("/dev/mem", O_RDWR | O_SYNC);
+    
+    volatile uint32_t *gpio_regs = mmap(NULL, MAP_SIZE,
+        PROT_READ | PROT_WRITE, MAP_SHARED, fd, GPIO_BASE_ADDR);
+    
+    // GPIO_DATA register (offset 0x00)
+    gpio_regs[0] = 0x0C;  // Binary: 1100 (AB)
+    
+    munmap((void *)gpio_regs, MAP_SIZE);
+    close(fd);
+    
+    return 0;
+}
+```
+
+#### 장점
+- ✅ **Linux GPIO Subsystem 사용**: 표준 인터페이스
+- ✅ **sysfs 접근 가능**: Shell에서 쉽게 제어
+- ✅ **권한 관리 용이**: user 권한으로 가능
+- ✅ **표준 드라이버 사용**: 검증된 코드
+- ✅ **개발 속도 빠름**: 표준 API 사용
+
+#### 단점
+- ⚠️ **Device Tree 수정 필수**: 속성 명시 필요
+- ⚠️ **기능 제한적**: 단순 GPIO만 가능
+- ⚠️ **복잡한 제어 어려움**: 타이밍, 상태 관리 제한
+- ⚠️ **레지스터 제한**: GPIO_DATA, GPIO_TRI만
+- ⚠️ **피드백 없음**: 상태 읽기 제한적
+
+---
+
+### ❌ 방법 2: Custom AXI Slave (현재 방식)
+
+#### Hardware 구조
+```
+┌─────────────────────────────────────────┐
+│ Zynq PS (ARM Processor)                 │
+│                                         │
+│ M_AXI_GP0 (AXI4-Lite Master)           │
+└─────────────┬───────────────────────────┘
+              │ AXI Bus
+              ▼
+┌─────────────────────────────────────────┐
+│ stepper_motor_ctrl (Custom IP)          │
+│ Base Address: 0x43C00000                │
+│ Size: 0x1000                            │
+│                                         │
+│ Registers:                              │
+│ - Control Register  (0x00)              │
+│   [0] motor_run                         │
+│   [1] motor_dir                         │
+│   [2] half_full                         │
+│                                         │
+│ - Status Register   (0x04)              │
+│   [3:0] coils state (read-only)         │
+│                                         │
+│ - Speed Register    (0x08)              │
+│   [15:0] steps/sec                      │
+│                                         │
+│ Internal Logic:                         │
+│ - Stepper controller                    │
+│ - Debounce logic                        │
+│ - Step sequencer                        │
+│ - Pattern ROM                           │
+└─────────────┬───────────────────────────┘
+              │ coils[3:0]
+              ▼
+      ┌───────────────────┐
+      │ Stepper Motor     │
+      │ (4 coils)         │
+      └───────────────────┘
+```
+
+#### Device Tree 설정 (자동 생성)
+```dts
+// pl.dtsi (Vivado가 자동 생성 - 수정 불필요!)
+
+/ {
+    amba_pl: amba_pl@0 {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        compatible = "simple-bus";
+        ranges ;
+        
+        stepper_motor_ctrl_0: stepper_motor_ctrl@43c00000 {
+            compatible = "generic-uio";     // ← 자동 생성
+            reg = <0x43c00000 0x1000>;      // ← 자동 생성
+            // 이것만으로 충분!
+        };
+    };
+};
+```
+
+**추가 수정 불필요!** 이미 필요한 정보가 모두 있습니다:
+- ✅ Base address: 0x43C00000
+- ✅ Size: 0x1000 (4KB)
+- ✅ Compatible string: generic-uio
+
+#### Software 사용 방법: 직접 메모리 접근
+```c
+// stepper_test.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
+#define STEPPER_BASE_ADDR 0x43C00000
+#define MAP_SIZE 0x1000
+
+// Register offsets
+#define CTRL_REG_OFFSET   0  // 0x00
+#define STATUS_REG_OFFSET 1  // 0x04
+#define SPEED_REG_OFFSET  2  // 0x08
+
+// Control bits
+#define CTRL_RUN        (1 << 0)
+#define CTRL_DIR        (1 << 1)
+#define CTRL_HALF_STEP  (1 << 2)
+
+volatile uint32_t *stepper_regs = NULL;
+
+int stepper_init(void) {
+    int fd = open("/dev/mem", O_RDWR | O_SYNC);
+    if (fd == -1) {
+        perror("Cannot open /dev/mem");
+        return -1;
+    }
+    
+    void *mapped_base = mmap(NULL, MAP_SIZE, 
+        PROT_READ | PROT_WRITE, MAP_SHARED, fd, STEPPER_BASE_ADDR);
+    
+    if (mapped_base == MAP_FAILED) {
+        perror("mmap failed");
+        close(fd);
+        return -1;
+    }
+    
+    stepper_regs = (volatile uint32_t *)mapped_base;
+    close(fd);
+    
+    return 0;
+}
+
+void stepper_start(void) {
+    stepper_regs[CTRL_REG_OFFSET] |= CTRL_RUN;
+}
+
+void stepper_stop(void) {
+    stepper_regs[CTRL_REG_OFFSET] &= ~CTRL_RUN;
+}
+
+void stepper_set_direction(int cw) {
+    if (cw)
+        stepper_regs[CTRL_REG_OFFSET] |= CTRL_DIR;
+    else
+        stepper_regs[CTRL_REG_OFFSET] &= ~CTRL_DIR;
+}
+
+void stepper_set_half_step(int enable) {
+    if (enable)
+        stepper_regs[CTRL_REG_OFFSET] |= CTRL_HALF_STEP;
+    else
+        stepper_regs[CTRL_REG_OFFSET] &= ~CTRL_HALF_STEP;
+}
+
+uint32_t stepper_get_status(void) {
+    return stepper_regs[STATUS_REG_OFFSET];
+}
+
+int main() {
+    printf("Stepper Motor Test\n");
+    
+    if (stepper_init() < 0) {
+        return 1;
+    }
+    
+    // Test 1: CW, Full-step
+    printf("Test 1: CW, Full-step\n");
+    stepper_set_direction(1);
+    stepper_set_half_step(0);
+    stepper_start();
+    sleep(3);
+    
+    // Test 2: CCW, Half-step
+    printf("Test 2: CCW, Half-step\n");
+    stepper_set_direction(0);
+    stepper_set_half_step(1);
+    sleep(3);
+    
+    // Stop
+    printf("Stopping...\n");
+    stepper_stop();
+    
+    // Read status
+    printf("Final status: 0x%08X\n", stepper_get_status());
+    
+    return 0;
+}
+```
+
+#### 장점
+- ✅ **Device Tree 수정 불필요**: 자동 생성으로 충분
+- ✅ **복잡한 로직 구현**: 다중 레지스터, 내부 상태 머신
+- ✅ **실시간 피드백**: Status register로 상태 확인
+- ✅ **유연한 제어**: 속도, 방향, 모드 등 다양한 제어
+- ✅ **IP 재사용**: 다른 프로젝트에서도 사용 가능
+- ✅ **하드웨어 가속**: FPGA 로직으로 타이밍 정확
+- ✅ **확장 가능**: 레지스터 추가 용이
+
+#### 단점
+- ⚠️ **Linux GPIO API 불가**: sysfs 사용 불가
+- ⚠️ **Root 권한 필요**: /dev/mem 접근
+- ⚠️ **표준 driver 없음**: 직접 메모리 관리
+- ⚠️ **개발 시간**: Custom IP 개발 필요
+
+---
+
+## 🔍 왜 Device Tree 수정이 불필요한가?
+
+### 이유 1: Vivado가 자동으로 생성
+
+Block Design를 Export하면 자동으로 생성됩니다:
+
+```tcl
+# Vivado에서 실행
+write_hw_platform -fixed -include_bit -force \
+    ./design_1_wrapper.xsa
+```
+
+생성되는 파일:
+```
+design_1_wrapper.xsa
+├── hardware definition
+├── bitstream
+└── pl.dtsi  ← Device Tree가 이미 포함!
+```
+
+`pl.dtsi` 내용:
+```dts
+stepper_motor_ctrl_0: stepper_motor_ctrl@43c00000 {
+    compatible = "generic-uio";
+    reg = <0x43c00000 0x1000>;
+};
+```
+
+**이미 필요한 모든 정보가 있습니다!**
+
+---
+
+### 이유 2: /dev/mem으로 충분
+
+Custom AXI Slave는 일반 메모리 영역으로 취급됩니다:
+
+```c
+// 특별한 Device Tree 속성 불필요
+int fd = open("/dev/mem", O_RDWR | O_SYNC);
+
+// Base address만 알면 바로 접근!
+void *base = mmap(NULL, 0x1000,
+                  PROT_READ | PROT_WRITE,
+                  MAP_SHARED, fd, 0x43C00000);
+
+// 레지스터 접근
+volatile uint32_t *regs = (volatile uint32_t *)base;
+regs[0] = 0x06;  // Control register write
+```
+
+**Linux MMU가 알아서 처리합니다:**
+- ✅ 물리 주소 0x43C00000이 FPGA 영역임을 인식
+- ✅ 읽기/쓰기 가능한 메모리로 매핑
+- ✅ 캐시 비활성화 (O_SYNC 플래그)
+
+---
+
+### 이유 3: GPIO Subsystem이 불필요
+
+#### AXI GPIO의 경우:
+```dts
+&axi_gpio_0 {
+    gpio-controller;           // ← Linux GPIO subsystem 통합
+    #gpio-cells = <2>;         // ← GPIO 번호 관리
+    xlnx,all-outputs = <0x1>;  // ← 방향 설정
+};
+```
+→ **Linux가 GPIO로 관리해야 하므로 Device Tree 필수!**
+
+#### Custom AXI Slave의 경우:
+```c
+// GPIO subsystem 불필요
+// 직접 레지스터 제어
+regs[0] = 0x06;  // Control register
+```
+→ **일반 메모리 접근이므로 Device Tree 불필요!**
+
+---
+
+### 이유 4: 기능이 단순 명확함
+
+#### AXI GPIO - 추가 정보 필요:
+```dts
+xlnx,gpio-width = <0x4>;       // GPIO 개수
+xlnx,all-inputs = <0x0>;       // Input 설정
+xlnx,all-outputs = <0x1>;      // Output 설정
+xlnx,tri-default = <0xFFFF>;   // Tristate 기본값
+xlnx,is-dual = <0>;            // Dual channel 여부
+```
+
+#### Custom AXI Slave - 기본 정보만:
+```dts
+reg = <0x43c00000 0x1000>;     // Base address와 size만
+compatible = "generic-uio";     // 접근 방법만
+```
+
+**훨씬 단순합니다!**
+
+---
+
+## 💡 언제 Device Tree를 수정해야 하나?
+
+### ✅ 수정이 **필요한** 경우
+
+#### 1. Linux Subsystem 통합
+```dts
+// GPIO Subsystem
+&axi_gpio_0 {
+    gpio-controller;
+    #gpio-cells = <2>;
+    xlnx,gpio-width = <4>;
+};
+
+// I2C Subsystem
+&axi_iic_0 {
+    compatible = "xlnx,axi-iic-1.02.a";
+    #address-cells = <1>;
+    #size-cells = <0>;
+    clock-frequency = <100000>;
+};
+
+// SPI Subsystem
+&axi_quad_spi_0 {
+    compatible = "xlnx,axi-quad-spi-3.2";
+    #address-cells = <1>;
+    #size-cells = <0>;
+    
+    flash@0 {
+        compatible = "jedec,spi-nor";
+        reg = <0>;
+        spi-max-frequency = <50000000>;
+    };
+};
+
+// Ethernet Subsystem
+&axi_ethernet_0 {
+    compatible = "xlnx,axi-ethernet-1.00.a";
+    device_type = "network";
+    local-mac-address = [00 0a 35 00 00 00];
+    phy-handle = <&phy0>;
+};
+```
+
+#### 2. 표준 Linux Driver 사용
+```dts
+// UART Driver
+&axi_uart16550_0 {
+    compatible = "xlnx,xps-uart16550-2.00.a";
+    clock-frequency = <100000000>;
+    current-speed = <115200>;
+};
+
+// CAN Driver
+&axi_can_0 {
+    compatible = "xlnx,axi-can-1.00.a";
+    clock-frequency = <100000000>;
+    tx-fifo-depth = <16>;
+    rx-fifo-depth = <16>;
+};
+
+// Video (V4L2) Driver
+&axi_vdma_0 {
+    compatible = "xlnx,axi-vdma-1.00.a";
+    #dma-cells = <1>;
+    xlnx,num-fstores = <3>;
+};
+```
+
+#### 3. Interrupt 사용
+```dts
+&stepper_motor_ctrl_0 {
+    compatible = "generic-uio";
+    reg = <0x43c00000 0x1000>;
+    interrupts = <0 29 4>;           // ← Interrupt 추가!
+    interrupt-parent = <&intc>;
+};
+
+// Interrupt controller
+&intc {
+    interrupt-controller;
+    #interrupt-cells = <3>;
+};
+```
+
+#### 4. 커스텀 속성 추가
+```dts
+&stepper_motor_ctrl_0 {
+    compatible = "mycompany,stepper-v1.0";
+    reg = <0x43c00000 0x1000>;
+    
+    // Custom properties
+    mycompany,clock-frequency = <50000000>;
+    mycompany,step-mode = "half";
+    mycompany,max-speed = <1200>;
+    mycompany,default-direction = "cw";
+    mycompany,enable-feedback;
+    mycompany,coil-order = <0 1 2 3>;
+};
+```
+
+#### 5. 여러 인스턴스 구분
+```dts
+&stepper_motor_ctrl_0 {
+    compatible = "generic-uio";
+    reg = <0x43c00000 0x1000>;
+    label = "stepper-motor-1";
+};
+
+&stepper_motor_ctrl_1 {
+    compatible = "generic-uio";
+    reg = <0x43c10000 0x1000>;
+    label = "stepper-motor-2";
+};
+```
+
+---
+
+### ❌ 수정이 **불필요한** 경우
+
+#### 1. /dev/mem 직접 접근
+```c
+// 자동 생성된 Device Tree로 충분
+mmap(..., 0x43C00000);
+```
+
+#### 2. UIO (Userspace I/O) 기본 사용
+```c
+// generic-uio로 충분
+open("/dev/uio0", O_RDWR);
+read(fd, &info, sizeof(info));
+```
+
+#### 3. 단순 레지스터 접근
+```c
+// 복잡한 속성 불필요
+volatile uint32_t *regs = base_addr;
+regs[0] = control_value;
+uint32_t status = regs[1];
+```
+
+#### 4. Polling 방식 제어
+```c
+// Interrupt 불필요
+while (1) {
+    uint32_t status = regs[1];
+    if (status & DONE_BIT) break;
+    usleep(1000);
+}
+```
+
+---
+
+## 📊 완전 비교표
+
+| 항목 | AXI GPIO + Device Tree | Custom AXI Slave |
+|------|----------------------|------------------|
+| **Device Tree 수정** | ✅ 필수 | ❌ 불필요 |
+| **자동 생성 DT** | ❌ 불충분 | ✅ 충분 |
+| **추가 속성** | ✅ 많음 (gpio-controller 등) | ❌ 최소 (reg만) |
+| **Linux Driver** | 표준 GPIO driver | 불필요 |
+| **접근 방법** | sysfs or /dev/mem | /dev/mem only |
+| **Kernel 통합** | ✅ GPIO subsystem | ❌ User-space만 |
+| **권한** | user 가능 (sysfs) | root 필요 (/dev/mem) |
+| **개발 편의성** | ✅ 높음 (표준 API) | ⚠️ 중간 (직접 구현) |
+| **기능 복잡도** | ⚠️ 단순 (GPIO만) | ✅ 복잡 (다중 레지스터) |
+| **실시간 피드백** | ⚠️ 제한적 | ✅ 완전 지원 |
+| **타이밍 제어** | ⚠️ SW 의존 | ✅ HW 정확 |
+| **재사용성** | ⚠️ 표준 IP만 | ✅ Custom IP |
+| **확장성** | ⚠️ 낮음 | ✅ 높음 |
+| **디버깅** | ✅ sysfs로 쉬움 | ⚠️ 레지스터 직접 확인 |
+| **적용 사례** | 단순 GPIO 제어 | 복잡한 제어 로직 |
+
+---
+
+## 🔄 신호 흐름 비교
+
+### AXI GPIO 방식
+```
+Software (User-space)
+    │
+    ├─ sysfs (/sys/class/gpio)
+    │   └─ echo 1 > gpio480/value
+    │
+    └─ /dev/mem
+        └─ mmap(0x41200000)
+            │
+            ▼
+Linux Kernel
+    │
+    ├─ GPIO Subsystem
+    │   ├─ gpio_set_value()
+    │   └─ GPIO chip driver
+    │       └─ xlnx-gpio driver
+    │
+    └─ /dev/mem driver
+        └─ Memory mapping
+            │
+            ▼
+AXI Bus
+            │
+            ▼
+┌───────────────────────┐
+│ AXI GPIO IP           │
+│ - GPIO_DATA (0x00)    │
+│ - GPIO_TRI  (0x04)    │
+└───────────┬───────────┘
+            │
+            ▼
+        gpio_io_o[3:0]
+            │
+            ▼
+    ┌───────────────┐
+    │ Stepper Motor │
+    └───────────────┘
+```
+
+### Custom AXI Slave 방식
+```
+Software (User-space)
+    │
+    └─ /dev/mem
+        └─ mmap(0x43C00000)
+            │
+            ▼
+Linux Kernel
+    │
+    └─ /dev/mem driver
+        └─ Memory mapping (MMU)
+            │
+            ▼
+AXI Bus
+            │
+            ▼
+┌─────────────────────────────┐
+│ stepper_motor_ctrl IP       │
+│ - Control Reg  (0x00)       │
+│ - Status Reg   (0x04)       │
+│ - Speed Reg    (0x08)       │
+│                             │
+│ Internal Logic:             │
+│ ├─ Stepper controller       │
+│ ├─ Debounce                 │
+│ ├─ Step sequencer           │
+│ └─ Pattern ROM              │
+└─────────────┬───────────────┘
+              │
+              ▼
+        coils[3:0]
+              │
+              ▼
+      ┌───────────────┐
+      │ Stepper Motor │
+      └───────────────┘
+```
+
+**Custom 방식이 더 직접적이고 단순합니다!**
+
+---
+
+## 🎓 실전 예제
+
+### 예제 1: AXI GPIO 방식으로 LED Blink
+
+#### Device Tree
+```dts
+&axi_gpio_0 {
+    compatible = "xlnx,xps-gpio-1.00.a";
+    gpio-controller;
+    #gpio-cells = <2>;
+    xlnx,gpio-width = <1>;
+    xlnx,all-outputs = <0x1>;
+};
+```
+
+#### Software
+```bash
+#!/bin/bash
+# LED blink using sysfs
+
+GPIO_NUM=480
+
+# Export GPIO
+echo $GPIO_NUM > /sys/class/gpio/export
+echo out > /sys/class/gpio/gpio${GPIO_NUM}/direction
+
+# Blink
+while true; do
+    echo 1 > /sys/class/gpio/gpio${GPIO_NUM}/value
+    sleep 0.5
+    echo 0 > /sys/class/gpio/gpio${GPIO_NUM}/value
+    sleep 0.5
+done
+```
+
+---
+
+### 예제 2: Custom AXI Slave 방식으로 Stepper Motor 제어
+
+#### Device Tree (자동 생성 - 수정 불필요!)
+```dts
+stepper_motor_ctrl_0: stepper_motor_ctrl@43c00000 {
+    compatible = "generic-uio";
+    reg = <0x43c00000 0x1000>;
+};
+```
+
+#### Software
+```c
+// stepper_control.c
+#include <stdio.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
+#define BASE 0x43C00000
+
+int main() {
+    int fd = open("/dev/mem", O_RDWR | O_SYNC);
+    volatile uint32_t *regs = mmap(NULL, 0x1000,
+        PROT_READ | PROT_WRITE, MAP_SHARED, fd, BASE);
+    
+    // Start motor CW, full-step
+    regs[0] = 0x06;  // run=1, dir=1, half=0
+    printf("Motor started (CW)\n");
+    sleep(3);
+    
+    // Change to CCW, half-step
+    regs[0] = 0x0A;  // run=1, dir=0, half=1
+    printf("Changed to CCW, half-step\n");
+    sleep(3);
+    
+    // Stop
+    regs[0] = 0x00;
+    printf("Motor stopped\n");
+    
+    // Read status
+    printf("Final coils state: 0x%X\n", regs[1] & 0xF);
+    
+    munmap((void *)regs, 0x1000);
+    close(fd);
+    
+    return 0;
+}
+```
+
+---
+
+## 🛠️ 트러블슈팅
+
+### 문제 1: "Cannot open /dev/mem"
+
+**원인**: 권한 부족
+
+**해결:**
+```bash
+# root 권한으로 실행
+sudo ./stepper_test
+
+# 또는 setuid 설정
+sudo chmod u+s stepper_test
+```
+
+---
+
+### 문제 2: "mmap failed"
+
+**원인**: 잘못된 base address 또는 size
+
+**해결:**
+```bash
+# Address Map 확인
+cat /proc/iomem | grep stepper
+
+# 또는 Device Tree 확인
+cat /proc/device-tree/amba_pl@0/stepper_motor_ctrl@*/reg
+```
+
+---
+
+### 문제 3: GPIO 번호를 모르겠음
+
+**원인**: GPIO base 번호 불확실
+
+**해결:**
+```bash
+# GPIO chip 확인
+cat /sys/kernel/debug/gpio
+
+# 또는 gpiochip 확인
+ls /sys/class/gpio/gpiochip*
+
+# Base 번호 확인
+cat /sys/class/gpio/gpiochip*/base
+```
+
+---
+
+## 📌 핵심 정리
+
+### Device Tree 수정이 불필요한 이유 (Custom AXI Slave)
+
+1. ✅ **자동 생성**: Vivado가 pl.dtsi에 자동 생성
+2. ✅ **충분한 정보**: Base address와 size만 있으면 됨
+3. ✅ **직접 접근**: /dev/mem으로 바로 접근 가능
+4. ✅ **Subsystem 불필요**: GPIO, I2C 등의 커널 통합 불필요
+5. ✅ **단순성**: 복잡한 속성 설정 불필요
+
+### Device Tree 수정이 필요한 경우
+
+1. ⚠️ **Linux Subsystem 통합**: GPIO, I2C, SPI, Ethernet 등
+2. ⚠️ **표준 Driver 사용**: Kernel driver가 속성 읽음
+3. ⚠️ **Interrupt 사용**: Interrupt mapping 필요
+4. ⚠️ **특수 속성**: Clock frequency, mode 등 설정
+5. ⚠️ **다중 인스턴스**: Label, alias 등으로 구분
+
+---
+
+## 🎯 결론
+
+### AXI GPIO 방식
+```
+✅ 사용 시기:
+  - 단순 GPIO 제어만 필요
+  - Linux GPIO API 사용
+  - 표준 인터페이스 선호
+  - sysfs 접근 필요
+
+❌ Device Tree 수정: 필수!
+```
+
+### Custom AXI Slave 방식
+```
+✅ 사용 시기:
+  - 복잡한 제어 로직 필요
+  - 다중 레지스터 사용
+  - 실시간 피드백 필요
+  - 하드웨어 가속 필요
+
+✅ Device Tree 수정: 불필요!
+   (자동 생성으로 충분)
+```
+
+---
+
+**현재 Stepper Motor Controller 프로젝트에서는:**
+
+✅ Custom AXI Slave 방식
+✅ 복잡한 제어 로직 (step sequencing, debounce)
+✅ 다중 레지스터 (Control, Status, Speed)
+✅ 실시간 피드백 (coil state monitoring)
+
+**→ Device Tree 수정 불필요!** 🎉
+
+**→ /dev/mem 직접 접근으로 충분!** ✨
+
+---
+
+## 📚 참고 자료
+
+### Xilinx 문서
+- UG585: Zynq-7000 Technical Reference Manual
+- UG1037: Vivado Design Suite AXI Reference Guide
+- UG1118: Creating and Packaging Custom IP
+
+### Linux 문서
+- Device Tree Specification v0.3
+- Linux GPIO Subsystem Documentation
+- UIO (Userspace I/O) HOWTO
+
+### 관련 주제
+- AXI4-Lite Protocol
+- Memory-mapped I/O
+- Device Tree Overlay
+- sysfs Interface
+
+---
+
+**작성일**: 2025년 1월  
+**버전**: 1.0  
+**상태**: 완료 ✅
+
+---
+
+*이 문서는 AXI GPIO와 Custom AXI Slave 간의 Device Tree 수정 필요성 차이를 완전히 설명합니다.*
 
 
 
