@@ -1,12 +1,11 @@
 # ALU AXI Project for Zybo Z7-20
 
-**Engineer:** 나무  
-**Date:** 2025-11-12  
 **Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7000)
 
 ## 프로젝트 개요
 
-이 프로젝트는 8비트 ALU(Arithmetic Logic Unit)를 AXI-Lite 인터페이스로 래핑하여 Zynq의 PS(Processing System)에서 PL(Programmable Logic) 하드웨어 가속기로 접근할 수 있도록 구현한 완전한 임베디드 시스템입니다.
+이 프로젝트는 8비트 ALU(Arithmetic Logic Unit)를 AXI-Lite 인터페이스로 래핑하여 
+Zynq의 PS(Processing System)에서 PL(Programmable Logic) 하드웨어 가속기로 접근할 수 있도록 구현한 완전한 임베디드 시스템입니다.
 
 ### 주요 기능
 
@@ -366,22 +365,20 @@ echo 0 > /sys/devices/platform/amba/43c00000.alu/opcode
 
 🎯 주요 기능
   * ALU 연산:
-
-✅ 덧셈 (ADD)
-✅ 뺄셈 (SUB)
-✅ 곱셈 (MUL)
-✅ 나눗셈 (DIV)
-✅ 나머지 (MOD)
-✅ 같음 비교 (EQ)
-✅ 크기 비교 (GT, LT)
+    - ✅ 덧셈 (ADD)
+    - ✅ 뺄셈 (SUB)
+    - ✅ 곱셈 (MUL)
+    - ✅ 나눗셈 (DIV)
+    - ✅ 나머지 (MOD)
+    - ✅ 같음 비교 (EQ)
+    - ✅ 크기 비교 (GT, LT)
 
   * 인터페이스:
-
-✅ AXI-Lite 슬레이브 인터페이스
-✅ 4개의 32비트 레지스터 (0x43C00000)
-✅ Linux 커널 드라이버
-✅ Sysfs 인터페이스
-✅ /dev/mem 직접 접근
+    - ✅ AXI-Lite 슬레이브 인터페이스
+    - ✅ 4개의 32비트 레지스터 (0x43C00000)
+    - ✅ Linux 커널 드라이버
+    - ✅ Sysfs 인터페이스
+    - ✅ /dev/mem 직접 접근
 
 🚀 사용 방법
 * 1단계: Vivado 프로젝트 생성
