@@ -79,8 +79,15 @@ endmodule
    ```bash
    cp /mnt/share/design_top_wrapper.xsa ~/projects/
 
+   # PetaLinux 환경이 활성화되어 있는지 확인
    unzip -l design_top_wrapper.xsa
 
+   # Unzip
+   unzip design_top_wrapper.xsa -d design_top_wrapper
+
+   # bit 파일 복사
+   cp design_top_wrapper/design_top_wrapper.bit myprojec/image/linux
+   
    cd ~/projects
 
    # PetaLinux 환경이 활성화되어 있는지 확인
