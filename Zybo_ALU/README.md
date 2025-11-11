@@ -238,6 +238,198 @@ PetaLinux에서 커널 드라이버를 만들지 않고도 **AXI-Lite 레지스�
 | 주소 mismatch | Vivado Address Editor의 Base Address 확인 필요 |
 
 ---
+## 🔍 7. 스위치 / LED 추가
+
+REG2 (0x08): 스위치 상태 읽기 (읽기 전용) → REG2[3:0] = {SW3..SW0}
+REG3 (0x0C): LED 제어 (쓰기/읽기 가능) → LED[3:0] = REG3[3:0]
+
+아래에 RTL 수정, BD 연결, C 코드 업데이트를 한 번에 정리해 드립니다.
+
+1) RTL 수정 (alu_v1_0_S00_AXI.v)
+1-1. 포트 추가
+
+IP의 S00_AXI 모듈 포트에 스위치 입력/LED 출력 포트를 추가합니다.
+
+// Users to add ports here
+input  wire [3:0] sw_in,   // ★ 추가: 보드의 4개 스위치 입력
+output wire [3:0] led_out  // ★ 추가: 보드의 4개 LED 출력
+// User ports ends
+
+1-2. 입력 동기화(권장) + 디바운스(선택)
+
+스위치는 비동기이므로 2FF 동기화 정도는 해두는 게 안전합니다.
+
+// ★ 동기화 플립플롭 (간단 버전)
+reg [3:0] sw_ff1, sw_ff2;
+always @(posedge S_AXI_ACLK) begin
+  if (!S_AXI_ARESETN) begin
+    sw_ff1 <= 4'b0;
+    sw_ff2 <= 4'b0;
+  end else begin
+    sw_ff1 <= sw_in;
+    sw_ff2 <= sw_ff1;
+  end
+end
+wire [3:0] sw_sync = sw_ff2; // REG2에 반영할 스위치
+
+1-3. REG2/REG3 매핑
+
+REG2: 읽기 전용으로 스위치 상태를 반영
+
+REG3: 쓰기한 값의 하위 4비트로 LED를 구동
+
+(A) 쓰기 로직(기존 slv_reg_wren case문) 유지 + REG3 쓰기 허용
+// case (axi_awaddr[...]):
+2'h2: begin
+  // ★ REG2는 읽기 전용으로 둘 수도 있음(권장: 아래 read MUX에서만 생성)
+  //    필요하면 사용자 용도로 RW로 남겨도 됨.
+end
+2'h3: begin
+  for (byte_index=0; byte_index<=(C_S_AXI_DATA_WIDTH/8)-1; byte_index=byte_index+1)
+    if (S_AXI_WSTRB[byte_index])
+      slv_reg3[byte_index*8 +: 8] <= S_AXI_WDATA[byte_index*8 +: 8];
+end
+
+(B) 읽기 MUX에 REG2, REG3 반영
+always @(*) begin
+  case (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB])
+    2'h0: reg_data_out = slv_reg0;
+    2'h1: reg_data_out = slv_reg1;                         // ALU 결과
+    2'h2: reg_data_out = {28'b0, sw_sync};                 // ★ REG2: SW 입력
+    2'h3: reg_data_out = slv_reg3;                         // ★ REG3: LED 레지스터
+    default: reg_data_out = {C_S_AXI_DATA_WIDTH{1'b0}};
+  endcase
+end
+
+(C) LED 출력 연결
+assign led_out = slv_reg3[3:0]; // ★ REG3 하위 4비트로 LED 구동
+
+
+참고: REG2를 완전 읽기 전용으로 두려면, 쓰기 case에서 2'h2는 아무 것도 하지 않도록 두는 게 깔끔합니다(위 예시처럼).
+
+2) ALU IP 상위(alu_v1_0.v) 포트 전달
+
+IP 패키지의 top 모듈(alu_v1_0.v)에도 동일 포트를 추가하고, 내부 S00_AXI 인스턴스에 패스하세요.
+
+module alu_v1_0 #(
+  // params...
+)(
+  // AXI 포트들 ...
+  input  wire [3:0] sw_in,     // ★ 외부로 노출
+  output wire [3:0] led_out    // ★ 외부로 노출
+);
+  // ...
+
+  alu_v1_0_S00_AXI #(
+    .C_S_AXI_DATA_WIDTH(C_S_AXI_DATA_WIDTH),
+    .C_S_AXI_ADDR_WIDTH(C_S_AXI_ADDR_WIDTH)
+  ) inst_S00_AXI (
+    // 기존 AXI 연결 ...
+    .sw_in (sw_in),       // ★ 패스
+    .led_out (led_out)    // ★ 패스
+  );
+
+endmodule
+
+3) Vivado Block Design 연결
+
+ALU IP Re-package 후 BD에 다시 추가/갱신
+
+ALU IP의 sw_in[3:0], led_out[3:0] 포트를 Make External로 빼거나, 별도 top wrapper에서 외부 핀과 연결
+
+XDC 제약에 Zybo Z7-20 보드의 SW0..SW3, LD0..LD3 핀을 매핑
+
+핀번호는 Digilent 제공 Zybo Z7-20 Master XDC에서 복사(보드 리비전/모델별 다를 수 있으니 반드시 그 파일 참고)
+
+각 핀에 IOSTANDARD LVCMOS33 설정
+
+예)
+
+## Switches
+set_property PACKAGE_PIN <PIN_SW0> IOSTANDARD LVCMOS33 [get_ports {sw_in[0]}]
+set_property PACKAGE_PIN <PIN_SW1> IOSTANDARD LVCMOS33 [get_ports {sw_in[1]}]
+set_property PACKAGE_PIN <PIN_SW2> IOSTANDARD LVCMOS33 [get_ports {sw_in[2]}]
+set_property PACKAGE_PIN <PIN_SW3> IOSTANDARD LVCMOS33 [get_ports {sw_in[3]}]
+
+## LEDs
+set_property PACKAGE_PIN <PIN_LD0> IOSTANDARD LVCMOS33 [get_ports {led_out[0]}]
+set_property PACKAGE_PIN <PIN_LD1> IOSTANDARD LVCMOS33 [get_ports {led_out[1]}]
+set_property PACKAGE_PIN <PIN_LD2> IOSTANDARD LVCMOS33 [get_ports {led_out[2]}]
+set_property PACKAGE_PIN <PIN_LD3> IOSTANDARD LVCMOS33 [get_ports {led_out[3]}]
+
+4) C 테스트 프로그램 업데이트
+
+기존 /dev/mem 프로그램에 LED 쓰기와 SW 읽기를 추가하면 됩니다.
+
+REG2(0x08) 읽기 → switches = r2 & 0xF
+
+REG3(0x0C) 쓰기/읽기 → leds 제어
+
+아래는 핵심만 발췌한 변경(당신이 쓰던 alu_test.c 구조 기준):
+
+#define REG0_OFF   0x00u
+#define REG1_OFF   0x04u
+#define REG2_OFF   0x08u  // ★ SW
+#define REG3_OFF   0x0Cu  // ★ LED
+
+// 예: 인자에 leds=<0x0~0xF> 있으면 REG3에 반영
+//     read 시 REG2/REG3도 함께 출력
+...
+if (do_write) {
+    uint32_t leds = 0xFFFFFFFF; // 기본: 변경 없음 의미
+    for (int i = 3; i < argc; ++i) {
+        if (parse_kv_u32(argv[i], "leds", &leds)) continue;
+        // 기존 a,b,opcode,ena 파싱 유지
+    }
+    ...
+    // ALU 쓰기
+    vbase[REG0_OFF/4] = reg0;
+
+    // LED 지정이 들어왔으면 LED도 갱신
+    if (leds != 0xFFFFFFFF) {
+        uint32_t reg3 = vbase[REG3_OFF/4];
+        reg3 = (reg3 & ~0xFu) | (leds & 0xFu);
+        vbase[REG3_OFF/4] = reg3;
+        printf("[WRITE] REG3(LED) <= 0x%08X (leds=%u)\n", reg3, (unsigned)(leds & 0xF));
+    }
+
+    // 결과/스위치 읽기 (옵션)
+    uint32_t r1 = vbase[REG1_OFF/4];
+    uint32_t r2 = vbase[REG2_OFF/4];
+    printf("[READ ] REG1=0x%08X  result=0x%04X\n", r1, (unsigned)(r1 & 0xFFFF));
+    printf("[READ ] REG2=0x%08X  switches[3:0]=0x%X\n", r2, (unsigned)(r2 & 0xF));
+}
+else { // read
+    uint32_t r0 = vbase[REG0_OFF/4];
+    uint32_t r1 = vbase[REG1_OFF/4];
+    uint32_t r2 = vbase[REG2_OFF/4]; // ★
+    uint32_t r3 = vbase[REG3_OFF/4]; // ★
+    printf("[DUMP]\n");
+    printf("  REG0=0x%08X\n", r0);
+    printf("  REG1=0x%08X  result=0x%04X\n", r1, (unsigned)(r1 & 0xFFFF));
+    printf("  REG2=0x%08X  switches[3:0]=0x%X\n", r2, (unsigned)(r2 & 0xF));
+    printf("  REG3=0x%08X  leds[3:0]=0x%X\n", r3, (unsigned)(r3 & 0xF));
+}
+
+실행 예
+# LED 0~3을 0b1010로 점등 + ALU ADD 실행
+sudo ./alu_test 0x43C00000 write a=0x12 b=0x03 opcode=0 ena=1 leds=0xA
+
+# 현재 스위치/LED/ALU 결과 덤프
+sudo ./alu_test 0x43C00000 read
+
+5) 디버깅 팁
+
+스위치 방향(풀업/풀다운)에 따라 논리가 반대로 읽힐 수 있습니다 → 필요 시 ~sw_sync 로 반전
+
+핀맵 불일치로 LED가 안 켜지면 XDC에서 핀/뱅크/IOSTANDARD 확인
+
+레지스터가 읽히지 않으면 PetaLinux에서 /dev/mem 권한과 Base Address 확인
+
+
+
+
+---
 
 ## 🧾 8. 라이선스 & 참고
 
