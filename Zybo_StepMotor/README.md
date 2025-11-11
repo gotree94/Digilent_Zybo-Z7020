@@ -1220,7 +1220,7 @@ arm-linux-gnueabihf-gcc stepper_test.c -o stepper_test
 
 
 * 리셋 관련 문제 해결.
-```
+```c
 // stepper_test.c (PetaLinux User Application)
 // Fixed version with proper reset initialization
 
