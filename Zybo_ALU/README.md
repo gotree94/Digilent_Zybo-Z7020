@@ -424,6 +424,17 @@ sudo ./alu_test 0x43C00000 write a=0x12 b=0x03 opcode=0 ena=1 leds=0xA
 sudo ./alu_test 0x43C00000 read
 ```
 
+```
+root@myproject:~# ./alu_test 0x43C10000 write a=0x12 b=0x34 opcode=2 ena=1 leds=0xA
+[WRITE] BASE=0x43C10000
+        a=0x12, b=0x34, ena=1, opcode=2  010 (*)  MUL
+        REG0 <= 0x1234000A
+        REG3(LED) <= 0x0000000A  (leds[3:0]=0xA)
+[READ ] REG1=0x000003A8  result=0x03A8 (936)
+[READ ] REG2=0x00000000  switches[3:0]=0x0
+[READ ] REG3=0x0000000A  leds[3:0]=0xA
+```
+
 5) 디버깅 팁
 
 * 스위치 방향(풀업/풀다운)에 따라 논리가 반대로 읽힐 수 있습니다 → 필요 시 ~sw_sync 로 반전
