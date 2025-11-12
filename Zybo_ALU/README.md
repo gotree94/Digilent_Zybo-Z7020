@@ -433,6 +433,23 @@ root@myproject:~# ./alu_test 0x43C10000 write a=0x12 b=0x34 opcode=2 ena=1 leds=
 [READ ] REG1=0x000003A8  result=0x03A8 (936)
 [READ ] REG2=0x00000000  switches[3:0]=0x0
 [READ ] REG3=0x0000000A  leds[3:0]=0xA
+root@myproject:~# ./alu_test 0x43C10000 write a=0x12 b=0x34 opcode=2 ena=1 leds=0xA
+[WRITE] BASE=0x43C10000
+        a=0x12, b=0x34, ena=1, opcode=2  010 (*)  MUL
+        REG0 <= 0x1234000A
+        REG3(LED) <= 0x0000000A  (leds[3:0]=0xA)
+[READ ] REG1=0x000003A8  result=0x03A8 (936)
+[READ ] REG2=0x00000006  switches[3:0]=0x6
+[READ ] REG3=0x0000000A  leds[3:0]=0xA
+root@myproject:~# ./alu_test 0x43C10000 write a=0x12 b=0x34 opcode=2 ena=1 leds=0xA
+[WRITE] BASE=0x43C10000
+        a=0x12, b=0x34, ena=1, opcode=2  010 (*)  MUL
+        REG0 <= 0x1234000A
+        REG3(LED) <= 0x0000000A  (leds[3:0]=0xA)
+[READ ] REG1=0x000003A8  result=0x03A8 (936)
+[READ ] REG2=0x00000000  switches[3:0]=0x0
+[READ ] REG3=0x0000000A  leds[3:0]=0xA
+root@myproject:~#
 ```
 
 5) 디버깅 팁
