@@ -250,6 +250,7 @@ PetaLinux에서 커널 드라이버를 만들지 않고도 **AXI-Lite 레지스�
 
 1-1. 포트 추가
  * IP의 S00_AXI 모듈 포트에 스위치 입력/LED 출력 포트를 추가합니다.
+
 ```verilog
 // Users to add ports here
 input  wire [3:0] sw_in,   // ★ 추가: 보드의 4개 스위치 입력
@@ -258,8 +259,8 @@ output wire [3:0] led_out  // ★ 추가: 보드의 4개 LED 출력
 ```
 
 1-2. 입력 동기화(권장) + 디바운스(선택)
+   * 스위치는 비동기이므로 2FF 동기화 정도는 해두는 게 안전합니다.
 
-* 스위치는 비동기이므로 2FF 동기화 정도는 해두는 게 안전합니다.
 ```verilog
 // ★ 동기화 플립플롭 (간단 버전)
 reg [3:0] sw_ff1, sw_ff2;
@@ -276,9 +277,8 @@ wire [3:0] sw_sync = sw_ff2; // REG2에 반영할 스위치
 ```
 
 * 1-3. REG2/REG3 매핑
-
-* REG2: 읽기 전용으로 스위치 상태를 반영
-* REG3: 쓰기한 값의 하위 4비트로 LED를 구동
+   * REG2: 읽기 전용으로 스위치 상태를 반영
+   * REG3: 쓰기한 값의 하위 4비트로 LED를 구동
 
 * (A) 쓰기 로직(기존 slv_reg_wren case문) 유지 + REG3 쓰기 허용
 ```verilog
@@ -315,8 +315,7 @@ assign led_out = slv_reg3[3:0]; // ★ REG3 하위 4비트로 LED 구동
 * 참고: REG2를 완전 읽기 전용으로 두려면, 쓰기 case에서 2'h2는 아무 것도 하지 않도록 두는 게 깔끔합니다(위 예시처럼).
 
 * 2) ALU IP 상위(alu_v1_0.v) 포트 전달
-
-* IP 패키지의 top 모듈(alu_v1_0.v)에도 동일 포트를 추가하고, 내부 S00_AXI 인스턴스에 패스하세요.
+   * IP 패키지의 top 모듈(alu_v1_0.v)에도 동일 포트를 추가하고, 내부 S00_AXI 인스턴스에 패스하세요.
 ```verilog
 module alu_v1_0 #(
   // params...
@@ -340,12 +339,12 @@ endmodule
 ```
 
 * 3) Vivado Block Design 연결
+   * ALU IP Re-package 후 BD에 다시 추가/갱신
+   * ALU IP의 sw_in[3:0], led_out[3:0] 포트를 Make External로 빼거나, 별도 top wrapper에서 외부 핀과 연결
+   * XDC 제약에 Zybo Z7-20 보드의 SW0..SW3, LD0..LD3 핀을 매핑
+   * 핀번호는 Digilent 제공 Zybo Z7-20 Master XDC에서 복사(보드 리비전/모델별 다를 수 있으니 반드시 그 파일 참고)
+   * 각 핀에 IOSTANDARD LVCMOS33 설정
 
-* ALU IP Re-package 후 BD에 다시 추가/갱신
-* ALU IP의 sw_in[3:0], led_out[3:0] 포트를 Make External로 빼거나, 별도 top wrapper에서 외부 핀과 연결
-* XDC 제약에 Zybo Z7-20 보드의 SW0..SW3, LD0..LD3 핀을 매핑
-* 핀번호는 Digilent 제공 Zybo Z7-20 Master XDC에서 복사(보드 리비전/모델별 다를 수 있으니 반드시 그 파일 참고)
-* 각 핀에 IOSTANDARD LVCMOS33 설정
 * 예)
 ```tcl
 ## Switches
@@ -362,10 +361,9 @@ set_property PACKAGE_PIN <PIN_LD3> IOSTANDARD LVCMOS33 [get_ports {led_out[3]}]
 ```
 
 * 4) C 테스트 프로그램 업데이트
-
-* 기존 /dev/mem 프로그램에 LED 쓰기와 SW 읽기를 추가하면 됩니다.
-* REG2(0x08) 읽기 → switches = r2 & 0xF
-* REG3(0x0C) 쓰기/읽기 → leds 제어
+   * 기존 /dev/mem 프로그램에 LED 쓰기와 SW 읽기를 추가하면 됩니다.
+   * REG2(0x08) 읽기 → switches = r2 & 0xF
+   * REG3(0x0C) 쓰기/읽기 → leds 제어
 
 * 아래는 핵심만 발췌한 변경(당신이 쓰던 alu_test.c 구조 기준):
 
