@@ -3,14 +3,17 @@
 # For Digilent Zynq Z7-20 Board with PCAM5C Camera
 # =============================================================================
 #
-# MIPI HS Clock is connected as diff_clock_rtl interface
-# Interface port name: dphy_hs_clock
-# Actual pin names: dphy_hs_clock_clk_p, dphy_hs_clock_clk_n
+# Bank 35: VCCO = 2.5V (MIPI signals)
+#   - MIPI HS/LP signals use LVDS_25 and HSUL_12
+#   - Camera control signals (GPIO, I2C) use LVCMOS25
+#
+# Bank 33: VCCO = 3.3V (HDMI signals)
+#   - HDMI TMDS signals use TMDS_33
 #
 # =============================================================================
 
 # =============================================================================
-# HDMI TX Output
+# HDMI TX Output (Bank 33 - VCCO 3.3V)
 # =============================================================================
 # TMDS Clock
 set_property -dict { PACKAGE_PIN H16 IOSTANDARD TMDS_33 } [get_ports hdmi_tx_clk_p]
@@ -25,44 +28,57 @@ set_property -dict { PACKAGE_PIN B19 IOSTANDARD TMDS_33 } [get_ports {hdmi_tx_da
 set_property -dict { PACKAGE_PIN A20 IOSTANDARD TMDS_33 } [get_ports {hdmi_tx_data_n[2]}]
 
 # =============================================================================
-# PCAM5C MIPI Interface
+# PCAM5C MIPI Interface (Bank 35 - VCCO 2.5V)
 # =============================================================================
 
 # MIPI Clock Lane - High Speed (diff_clock_rtl interface)
-# Interface name: dphy_hs_clock -> pins: dphy_hs_clock_clk_p, dphy_hs_clock_clk_n
-set_property -dict { PACKAGE_PIN J14 IOSTANDARD LVDS_25 DIFF_TERM 1 } [get_ports dphy_hs_clock_clk_p]
-set_property -dict { PACKAGE_PIN H14 IOSTANDARD LVDS_25 DIFF_TERM 1 } [get_ports dphy_hs_clock_clk_n]
+# Digilent schematic: J18 (mipi_clk_p), H18 (mipi_clk_n)
+set_property -dict { PACKAGE_PIN J18 IOSTANDARD LVDS_25 DIFF_TERM TRUE } [get_ports dphy_hs_clock_clk_p]
+set_property -dict { PACKAGE_PIN H18 IOSTANDARD LVDS_25 DIFF_TERM TRUE } [get_ports dphy_hs_clock_clk_n]
 
-# MIPI Clock Lane - Low Power (individual pins)
+# MIPI Clock Lane - Low Power 
+# Digilent schematic: J15 (mipi_clk_lp_p), H15 (mipi_clk_lp_n)
 set_property -dict { PACKAGE_PIN J15 IOSTANDARD HSUL_12 } [get_ports dphy_clk_lp_p]
 set_property -dict { PACKAGE_PIN H15 IOSTANDARD HSUL_12 } [get_ports dphy_clk_lp_n]
 
-# MIPI Data Lane 0 - High Speed (individual pins)
-set_property -dict { PACKAGE_PIN M15 IOSTANDARD LVDS_25 DIFF_TERM 1 } [get_ports {dphy_data_hs_p[0]}]
-set_property -dict { PACKAGE_PIN M14 IOSTANDARD LVDS_25 DIFF_TERM 1 } [get_ports {dphy_data_hs_n[0]}]
+# MIPI Data Lane 0 - High Speed
+# Digilent schematic: L15 (mipi_lane_p[0]), L14 (mipi_lane_n[0])
+set_property -dict { PACKAGE_PIN L15 IOSTANDARD LVDS_25 DIFF_TERM TRUE } [get_ports {dphy_data_hs_p[0]}]
+set_property -dict { PACKAGE_PIN L14 IOSTANDARD LVDS_25 DIFF_TERM TRUE } [get_ports {dphy_data_hs_n[0]}]
 
-# MIPI Data Lane 1 - High Speed (individual pins)
-set_property -dict { PACKAGE_PIN L16 IOSTANDARD LVDS_25 DIFF_TERM 1 } [get_ports {dphy_data_hs_p[1]}]
-set_property -dict { PACKAGE_PIN L17 IOSTANDARD LVDS_25 DIFF_TERM 1 } [get_ports {dphy_data_hs_n[1]}]
+# MIPI Data Lane 1 - High Speed
+# Digilent schematic: L16 (mipi_lane_p[1]), L17 (mipi_lane_n[1])
+set_property -dict { PACKAGE_PIN L16 IOSTANDARD LVDS_25 DIFF_TERM TRUE } [get_ports {dphy_data_hs_p[1]}]
+set_property -dict { PACKAGE_PIN L17 IOSTANDARD LVDS_25 DIFF_TERM TRUE } [get_ports {dphy_data_hs_n[1]}]
 
-# MIPI Data Lane 0 - Low Power (individual pins)
-set_property -dict { PACKAGE_PIN L15 IOSTANDARD HSUL_12 } [get_ports {dphy_data_lp_p[0]}]
-set_property -dict { PACKAGE_PIN L14 IOSTANDARD HSUL_12 } [get_ports {dphy_data_lp_n[0]}]
+# MIPI Data Lane 0 - Low Power
+# Digilent schematic: M15 (mipi_lp_p[0]), M14 (mipi_lp_n[0])
+set_property -dict { PACKAGE_PIN M15 IOSTANDARD HSUL_12 } [get_ports {dphy_data_lp_p[0]}]
+set_property -dict { PACKAGE_PIN M14 IOSTANDARD HSUL_12 } [get_ports {dphy_data_lp_n[0]}]
 
-# MIPI Data Lane 1 - Low Power (individual pins)
+# MIPI Data Lane 1 - Low Power
+# Digilent schematic: M17 (mipi_lp_p[1]), M18 (mipi_lp_n[1])
 set_property -dict { PACKAGE_PIN M17 IOSTANDARD HSUL_12 } [get_ports {dphy_data_lp_p[1]}]
 set_property -dict { PACKAGE_PIN M18 IOSTANDARD HSUL_12 } [get_ports {dphy_data_lp_n[1]}]
 
 # =============================================================================
-# PCAM5C Control Signals
+# PCAM5C Control Signals (Bank 35 - VCCO 2.5V)
+# IMPORTANT: Use LVCMOS25 to match Bank 35 VCCO (not LVCMOS33!)
 # =============================================================================
 
-# Camera Power Enable (directly from AXI GPIO port)
-set_property -dict { PACKAGE_PIN G17 IOSTANDARD LVCMOS33 } [get_ports {cam_gpio[0]}]
+# Camera Power Enable GPIO
+# Digilent schematic: G20 (cam_gpio)
+set_property -dict { PACKAGE_PIN G20 IOSTANDARD LVCMOS25 } [get_ports {cam_gpio[0]}]
 
-# Camera I2C (SCCB) - directly from AXI IIC port
-set_property -dict { PACKAGE_PIN F17 IOSTANDARD LVCMOS33 } [get_ports cam_iic_scl_io]
-set_property -dict { PACKAGE_PIN G18 IOSTANDARD LVCMOS33 } [get_ports cam_iic_sda_io]
+# Camera I2C (SCCB)
+# Digilent schematic: F20 (cam_scl), F19 (cam_sda)
+set_property -dict { PACKAGE_PIN F20 IOSTANDARD LVCMOS25 } [get_ports cam_iic_scl_io]
+set_property -dict { PACKAGE_PIN F19 IOSTANDARD LVCMOS25 } [get_ports cam_iic_sda_io]
+
+# =============================================================================
+# Bank 35 INTERNAL_VREF for HSUL_12 standard
+# =============================================================================
+set_property INTERNAL_VREF 0.6 [get_iobanks 35]
 
 # =============================================================================
 # Clock Constraints
