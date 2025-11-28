@@ -997,8 +997,6 @@ set_property CONFIG_VOLTAGE 3.3 [current_design]
 
 # Unused pins
 set_property BITSTREAM.CONFIG.UNUSEDPIN PULLUP [current_design]
-
-
 ```
 
 ---
