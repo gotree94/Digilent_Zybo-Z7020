@@ -1322,6 +1322,8 @@ top
 10. [PetaLinux 2022.1 도구 설치](#10-petalinux-20221-도구-설치)
 11. [최신 BSP 다운로드 및 빌드](#11-최신-bsp-다운로드-및-빌드)
 12. [부팅 이미지 생성 및 SD카드](#12-부팅-이미지-생성-및-sd카드)
+    - [12.0 빌드 결과 확인](#120-빌드-결과-확인)
+    - [12.5 Windows에서 SD카드 굽기 (balenaEtcher)](#125-windows에서-sd카드-굽기-balenetcher)
 13. [보드 동작 테스트 (Python) - 최신 버전](#13-보드-동작-테스트-python---최신-버전)
 14. [문제 해결 - 최신 버전](#14-문제-해결---최신-버전)
 
@@ -1402,7 +1404,10 @@ sudo apt-get install -y \
     iputils-ping \
     python3 python3-pip \
     picocom \
-    device-tree-compiler
+    device-tree-compiler \
+    xterm \
+    libtinfo5 \
+    python2
 ```
 
 > **2017.4와의 차이점:**
@@ -1410,6 +1415,11 @@ sudo apt-get install -y \
 > - `python3-pip` 명시적 설치
 > - `device-tree-compiler` 추가
 > - `net-tools` 대신 `iproute2` 사용 권장 (기본 포함)
+
+> **실제 빌드에서 추가 필요 패키지 (실습 확인):**
+> - `xterm`: PetaLinux 설치 시 필수 (설치 시 에러 발생)
+> - `libtinfo5`: xsct SDK 호환용 (빌드 시 `libtinfo.so.5` 에러)
+> - `python2`: 일부 레거시 스크립트 의존
 
 ### 9.4 시리얼 통신 도구
 
@@ -1434,21 +1444,19 @@ sudo chown -R $USER:$USER /opt/pkg/
 
 ### 10.2 PetaLinux 2022.1 다운로드
 
-```
-sudo usermod -aG vboxsf gotree94
-```
-
 1. [AMD/Xilinx 웹사이트](https://www.xilinx.com/support/download/index.html/content/xilinx/en/downloadNav/embedded-design-tools.html)에서:
    - **PetaLinux 2022.1** 설치 파일 다운로드
-   - 파일명 예: `petalinux-v2022.1-final-installer.run`
+   - 파일명 예: `petalinux-v2022.1-04191534-installer.run`
    - Xilinx 계정 로그인 필요
 
 ```bash
 cd ~/Downloads
-chmod +x petalinux-v2022.1-final-installer.run
-sudo apt-get install -y xterm
+chmod +x petalinux-v2022.1-04191534-installer.run
 ./petalinux-v2022.1-04191534-installer.run --dir /opt/pkg/petalinux
 ```
+
+> **주의:** `-d/--dir` 옵션은 공백으로 구분하여 사용 (`-d /path` 또는 `--dir /path`)
+> 잘못된 예: `-d/--dir /path` (에러 발생)
 
 > 설치 중 라이센스 동의 화면에서 `y`를 눌러 진행
 
@@ -1458,9 +1466,10 @@ sudo apt-get install -y xterm
 # 새 터미널에서 매번 실행
 source /opt/pkg/petalinux/settings.sh
 
-# 확인
-petalinux-config --version
-# 예상 출력: PetaLinux 2022.1
+# 확인 (환경변수 로드 확인)
+# petalinux-config --version은 지원하지 않음
+petalinux-config --help
+# "PetaLinux environment set to '/opt/pkg/petalinux'" 메시지 출력 시 성공
 ```
 
 ### 10.4 영구 환경변수 (편의용)
@@ -1513,8 +1522,8 @@ petalinux-create -t project -s /path/to/Zybo-Z7-20-Petalinux-2022-1.bsp
 cd <생성된 프로젝트_이름>
 ```
 
-> 디렉토리 이름은 BSP 파일 이름에서 파생됩니다.
-> 예: `Zybo-Z7-20-Petalinux-2022-1` 폴더 생성
+> **실제 빌드 확인:** BSP 내부 정의에 따라 프로젝트 디렉토리명이 `os`로 생성됩니다.
+> `ls`로 확인 후 `cd os`로 진입하세요.
 
 ### 11.3 (선택) 프로젝트 설정 확인
 
@@ -1554,9 +1563,12 @@ petalinux-build
 petalinux-package --boot \
     --force \
     --fsbl images/linux/zynq_fsbl.elf \
-    --fpga images/linux/system_wrapper.bit \
+    --fpga images/linux/system.bit \
     --u-boot
 ```
+
+> **2022.1에서의 변경:** FPGA 비트스트림 파일명이 `system_wrapper.bit`가 아닌 `system.bit`입니다.
+> sstate 캐시 관련 WARNING/ERROR는 무시해도 됩니다. 실제 태스크가 성공하면 빌드 성공입니다.
 
 ### 11.6 빌드 결과물 확인
 
@@ -1577,6 +1589,29 @@ ls -la images/linux/
 ---
 
 ## 12. 부팅 이미지 생성 및 SD카드
+
+### 12.0 빌드 결과 확인 (실제 빌드 완료 후)
+
+빌드 및 패키징 완료 후 `images/linux/`에 다음 파일이 있는지 확인:
+
+```bash
+ls -la images/linux/
+```
+
+**예상 파일 목록 (실제 빌드 확인):**
+
+| 파일 | 크기 | 설명 |
+|------|------|------|
+| `BOOT.BIN` | ~30MB | FSBL + FPGA 비트스트림 + U-Boot (패키징 후 생성) |
+| `image.ub` | ~75MB | 커널 + 디바이스트리 + 루트fs |
+| `boot.scr` | ~2.7KB | U-Boot 스크립트 |
+| `system.bit` | ~2.5MB | FPGA 비트스트림 |
+| `zynq_fsbl.elf` | ~450KB | First Stage Boot Loader |
+| `rootfs.ext4` | ~235MB | SD카드용 루트파일시스템 |
+| `zImage` | ~4.5MB | 커널 이미지 |
+| `system.dtb` | ~26KB | 디바이스 트리 |
+
+> sstate 캐시 관련 WARNING은 무시해도 됩니다. 모든 실제 태스크가 성공하면 빌드 성공입니다.
 
 ### 12.1 SD카드 포맷 (Ubuntu 20.04 기준)
 
@@ -1642,7 +1677,7 @@ bootargs = "console=ttyPS0,115200 earlyprintk uio_pdrv_genirq.of_id=generic-uio 
 변경 후 재빌드:
 ```bash
 petalinux-build
-petalinux-package --boot --force --fsbl images/linux/zynq_fsbl.elf --fpga images/linux/system_wrapper.bit --u-boot
+petalinux-package --boot --force --fsbl images/linux/zynq_fsbl.elf --fpga images/linux/system.bit --u-boot
 ```
 
 ### 12.4 보드 부팅
@@ -1672,6 +1707,106 @@ sudo minicom -D /dev/ttyUSB1 -b 115200
 - 전원 인가 후 **PS-SRST** 버튼 누름
 - 콘솔에 U-Boot → 커널 부팅 로그 출력 확인
 - `root@<hostname>:~#` 프롬프트 출력 시 부팅 성공
+
+### 12.5 Windows에서 SD카드 굽기 (balenaEtcher)
+
+Ubuntu 가상머신에서 직접 SD카드를 구하기 어려운 경우, **빌드 이미지를 Windows로 복사 후 balenaEtcher로 굽는 방법**이 가장 안정적입니다.
+
+#### 1단계: VirtualBox 공유 폴더 설정
+
+1. VirtualBox 메뉴 → **장치** → **공유 폴더 설정**
+2. **공유 폴더 추가** 클릭
+3. 폴더 경로: `C:\Zybo-SD-Images` (Windows에 생성)
+4. **자동 마운트** 체크
+5. 공유 이름: `share`
+
+#### 2단계: Ubuntu에서 공유 폴더로 이미지 복사
+
+```bash
+# 공유 폴더 마운트 확인 (보통 자동 마운트)
+ls /mnt/share
+
+# 필요 시 수동 마운트
+sudo mkdir -p /mnt/share
+sudo mount -t vboxsf share /mnt/share
+
+# 이미지 파일 복사
+cp /home/gotree94/Downloads/os/images/linux/BOOT.BIN /mnt/share/
+cp /home/gotree94/Downloads/os/images/linux/image.ub /mnt/share/
+cp /home/gotree94/Downloads/os/images/linux/boot.scr /mnt/share/
+
+# 확인
+ls -la /mnt/share/
+```
+
+> **initramfs 모드**에서는 `BOOT.BIN` + `image.ub` + `boot.scr` 3개 파일만 필요합니다.
+> **SD rootfs 모드**에서는 `rootfs.ext4`도 추가로 복사합니다.
+
+#### 3단계: Windows에서 balenaEtcher로 SD카드 굽기
+
+> **initramfs 모드일 때**는 balenaEtcher 대신 **수동 복사**가 더 적합합니다.
+> balenaEtcher는 단일 이미지(.img) 파일을 디스크에 직접 쓰는 도구이기 때문입니다.
+
+**방법 A: Windows에서 수동 복사 (권장, initramfs용)**
+
+1. SD카드를 Windows에 삽입
+2. SD카드의 FAT32 파티션을 `F:` (또는 다른 드라이브 문자)로 인식
+3. Windows 탐색기 또는 PowerShell에서 복사:
+
+```powershell
+# Windows PowerShell
+Copy-Item "C:\Zybo-SD-Images\BOOT.BIN" "F:\"
+Copy-Item "C:\Zybo-SD-Images\image.ub" "F:\"
+Copy-Item "C:\Zybo-SD-Images\boot.scr" "F:\"
+```
+
+4. SD카드 안전하게 제거
+
+**방법 B: balenaEtcher 사용 (SD rootfs 모드)**
+
+> SD rootfs 모드에서는 `rootfs.ext4`를 디스크에 직접 써야 하므로 balenaEtcher 사용 가능.
+> 다만 `BOOT.BIN`은 별도 FAT32 파티션에 넣어야 하므로 두 단계가 필요합니다.
+
+1. [balenaEtcher 다운로드](https://etcher.balena.io/) 및 설치
+2. SD카드를 Windows에 삽입
+3. balenaEtcher 실행:
+   - **Flash from file**: `rootfs.ext4` 선택
+   - **Select target**: SD카드 선택
+   - **Flash!** 클릭
+4. 완료 후 SD카드를 다시 Windows에 마운트
+5. FAT32 파티션에 `BOOT.BIN`, `image.ub`, `boot.scr` 복사
+
+**방법 C: Raspberry Pi Imager 대안**
+
+> `rpi-imager`도 SD카드 굽기에 사용 가능하나, custom image용으로는 제한적.
+> 가장 안정적인 방법은 **방법 A (수동 복사)**입니다.
+
+#### SD카드 포맷 (Windows에서)
+
+SD카드를 포맷해야 하는 경우:
+
+1. Windows 탐색기에서 SD카드 우클릭 → **포맷**
+2. 파일 시스템: **FAT32**
+3. 클러스터 크기: **기본값**
+4. **빠른 포맷** 체크 → 포맷
+
+> **주의:** FAT32는 최대 32GB 파티션까지 지원. 64GB 이상 SD카드는 별도 처리 필요.
+
+#### 최종 SD카드 구조
+
+```
+SD카드 (FAT32 파티션)
+├── BOOT.BIN        (~30MB)
+├── image.ub        (~75MB)
+└── boot.scr        (~2.7KB)
+```
+
+> SD rootfs 모드일 경우:
+> ```
+> SD카드
+> ├── 파티션1 (FAT32): BOOT.BIN, image.ub, boot.scr
+> └── 파티션2 (ext4): rootfs (dd로 작성)
+> ```
 
 ---
 
@@ -2468,19 +2603,88 @@ hostname -I && ping -c 3 8.8.8.8
 
 ## 14. 문제 해결 - 최신 버전
 
-### 14.1 PetaLinux 2022.1 빌드 에러
+### 14.1 PetaLinux 설치 에러: xterm 누락
 
 ```
-증상: petalinux-build 중 에러 발생
+증상: ERROR: You are missing the following system tools required by PetaLinux: xterm
 해결:
-  1. RAM 8GB 이상 확보 (16GB 권장)
-  2. 디스크 50GB 이상 여유 확인
-  3. 이전 빌드 잔여물 정리:
-     petalinux-build -x mrproper
-  4. 소스 클론 시 --recursive 포함 확인
-  5. 빌드 로그 확인:
-     build/tmp/log/coordinator.log
-     build/tmp/log/petalinux-build.log
+  sudo apt-get install -y xterm
+```
+
+### 14.2 PetaLinux 설치 에러: 지원되지 않는 OS
+
+```
+증상: WARNING: This is not a supported OS
+해결: 무시해도 됩니다. Ubuntu 20.04에서 정상 동작합니다.
+```
+
+### 14.3 PetaLinux 설치 에러: 디스크 공간 부족
+
+```
+증상: Cannot mkdir: No space left on device → ERROR: Failed to install xsct SDK
+해결:
+  1. 루트 파티션 최소 50GB 이상 확보 (권장 100GB+)
+  2. VirtualBox 가상 디스크 확장 후 GParted로 파티션 확장
+  3. 확장 명령어 (Windows PowerShell):
+     & "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" modifyhd "<vdi파일경로>" --resize 102400
+```
+
+### 14.4 Kconfig 생성 실패
+
+```
+증상: ERROR: Failed to generate Kconfig.syshw / Failed to Kconfig project
+해결:
+  1. libtinfo5 설치:
+     sudo apt-get install -y libtinfo5
+  2. 만약 libtinfo5 패키지가 없으면:
+     sudo apt-get install -y libtinfo6
+     sudo ln -s /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5
+```
+
+### 14.5 빌드 sstate 캐시 에러 (무시 가능)
+
+```
+증상:
+  ERROR: util-linux-2.37.2-r0 do_populate_lic_setscene: Fetcher failure
+  ERROR: Failed to build project
+  But: Tasks Summary: Attempted 5261 tasks of which 4664 didn't need to be rerun and all succeeded.
+
+해결: 이 에러는 무시해도 됩니다.
+  - sstate 캐시를 못 찾으면 소스에서 다시 빌드하라는 의미
+  - "all succeeded" 출력 시 실제 빌드 성공
+  - images/linux/에 파일이 정상 생성되면 성공
+```
+
+### 14.6 Petalinux-config --version 미지원
+
+```
+증상: getopt: unrecognized option '--version'
+해결: petalinux-config에는 --version 옵션이 없습니다.
+  - 환경변수 로드 확인: "PetaLinux environment set to '/opt/pkg/petalinux'" 출력 여부
+  - 도움말 확인: petalinux-config --help
+```
+
+### 14.7 프로젝트 디렉토리명이 "os"
+
+```
+증상: petalinux-create 후 "Zybo-Z7-20-Petalinux-2022-1" 대신 "os" 폴더 생성
+해결: BSP 내부에 프로젝트 이름이 "os"로 정의되어 있어 정상입니다.
+  cd os
+```
+
+### 14.8 빌드 로그에서 실제 에러 확인 방법
+
+```
+빌드 실패 시 실제 에러를 찾는 명령어:
+
+  # sstate 관련 에러 제외하고 실제 에러 검색
+  grep -i "ERROR" build/build.log | grep -v "sstate" | grep -v "setscene"
+
+  # 빌드 로그 마지막 200줄 확인
+  tail -200 build/build.log
+
+  # 특정 레시피 에러 확인
+  grep -i "failed" build/build.log | grep -v "sstate"
 ```
 
 ### 14.2 libssl 호환성 문제
@@ -2571,13 +2775,13 @@ Petalinux-Zybo-Z7-20/
 
 ### 2022.1 프로젝트 구조
 ```
-Zybo-Z7-20-Petalinux-2022-1/
+os/  (BSP 프로젝트 디렉토리)
 ├── images/linux/
 │   ├── BOOT.BIN
 │   ├── boot.scr          ← 새로 추가됨
 │   ├── image.ub
 │   ├── rootfs.ext4
-│   ├── system_wrapper.bit
+│   ├── system.bit        ← 2017.4의 system_wrapper.bit에서 변경
 │   └── zynq_fsbl.elf
 ├── pre-built/
 │   └── linux/images/
@@ -2595,7 +2799,8 @@ Zybo-Z7-20-Petalinux-2022-1/
 
 ---
 
-> **최종 업데이트:** 2026-07-20
+> **최종 업데이트:** 2026-07-20 (실제 빌드 검증 완료)
 > **대상 보드:** Digilent Zybo Z7-20 (XC7Z020-1CLG400C)
 > **PetaLinux 버전:** 2017.4 (Part 1) / 2022.1 (Part 2)
 > **Ubuntu 버전:** 16.04 LTS (Part 1) / 20.04 LTS (Part 2)
+> **빌드 검증 환경:** VirtualBox + Ubuntu 20.04 + PetaLinux 2022.1
