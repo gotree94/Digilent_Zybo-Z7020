@@ -1881,17 +1881,29 @@ scp hw_test.c petalinux@<BOARD_IP>:/home/petalinux/
 scp hw_test.py petalinux@<BOARD_IP>:/home/petalinux/
 ```
 
-### 13.3 C 하드웨어 테스트 코드 (추천)
+### 13.3 C 하드웨어 테스트 코드 (추천, UIO 방식)
 
-> Python 없이도 동작하는 C 테스트 프로그램
+> UIO 드라이버를 통한 PL GPIO 접근 (sysfs GPIO 대신 사용)
+> Zybo Z7-20에서 PL GPIO는 UIO에 의해 점유되어 sysfs GPIO 사용 불가
 > 한글 코멘트 깨짐 방지를 위해 영어로 작성
 
 ```c
 /*
- * hw_test.c - Zybo Z7-20 Hardware Test Program
+ * hw_test.c - Zybo Z7-20 Hardware Test Program (UIO version)
  *
  * Compile: gcc -o hw_test hw_test.c
  * Run:     ./hw_test
+ *
+ * PL GPIO access via UIO (uio_pdrv_genirq driver).
+ *
+ * UIO mapping (verified):
+ *   uio0 -> gpio@41220000 -> Buttons (4 inputs)
+ *   uio1 -> gpio@41210000 -> Switches (2 inputs)
+ *   uio2 -> gpio@41200000 -> LEDs (4 outputs)
+ *
+ * AXI GPIO register map:
+ *   Offset 0x00 : GPIO_DATA  (read/write pin values)
+ *   Offset 0x04 : GPIO_TRI   (direction: 0=output, 1=input)
  *
  * Tests: LED, Switch, Button, Network, Memory, System Info
  */
@@ -1902,113 +1914,90 @@ scp hw_test.py petalinux@<BOARD_IP>:/home/petalinux/
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <sys/mman.h>
 #include <time.h>
 
 /* -------------------------------------------------- */
-/* GPIO utility functions                             */
+/* PL GPIO via UIO                                    */
 /* -------------------------------------------------- */
 
-int export_gpio(int gpio)
+#define GPIO_TRI_OFFSET  0x04
+#define GPIO_DATA_OFFSET 0x00
+#define MAP_SIZE         0x10000
+
+/* UIO device addresses (from /sys/class/uio/uioN/maps/map0/addr) */
+#define UIO_ADDR_LEDS    0x41200000
+#define UIO_ADDR_SWITCH  0x41210000
+#define UIO_ADDR_BUTTON  0x41220000
+
+struct uio_gpio {
+    int   fd;
+    void *map;
+};
+
+int uio_open(struct uio_gpio *g, const char *devpath)
 {
-    int fd = open("/sys/class/gpio/export", O_WRONLY);
-    if (fd < 0) return -1;
-    char buf[16];
-    int len = snprintf(buf, sizeof(buf), "%d", gpio);
-    write(fd, buf, len);
-    close(fd);
-    usleep(100000); /* 100ms delay */
-    return 0;
-}
-
-int unexport_gpio(int gpio)
-{
-    int fd = open("/sys/class/gpio/unexport", O_WRONLY);
-    if (fd < 0) return -1;
-    char buf[16];
-    int len = snprintf(buf, sizeof(buf), "%d", gpio);
-    write(fd, buf, len);
-    close(fd);
-    return 0;
-}
-
-int set_gpio_direction(int gpio, const char *direction)
-{
-    char path[64];
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/direction", gpio);
-    int fd = open(path, O_WRONLY);
-    if (fd < 0) return -1;
-    write(fd, direction, strlen(direction));
-    close(fd);
-    return 0;
-}
-
-int set_gpio_value(int gpio, int value)
-{
-    char path[64];
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", gpio);
-    int fd = open(path, O_WRONLY);
-    if (fd < 0) return -1;
-    char buf[4];
-    int len = snprintf(buf, sizeof(buf), "%d", value);
-    write(fd, buf, len);
-    close(fd);
-    return 0;
-}
-
-int get_gpio_value(int gpio)
-{
-    char path[64];
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", gpio);
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) return -1;
-    char buf[4] = {0};
-    read(fd, buf, sizeof(buf) - 1);
-    close(fd);
-    return atoi(buf);
-}
-
-int get_gpio_base(const char *keyword)
-{
-    DIR *dir = opendir("/sys/class/gpio");
-    if (!dir) return -1;
-
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (strncmp(entry->d_name, "gpiochip", 8) != 0)
-            continue;
-
-        char label_path[128];
-        snprintf(label_path, sizeof(label_path),
-                 "/sys/class/gpio/%s/label", entry->d_name);
-
-        FILE *fp = fopen(label_path, "r");
-        if (!fp) continue;
-
-        char label[64] = {0};
-        fgets(label, sizeof(label), fp);
-        fclose(fp);
-
-        /* Convert to lowercase for comparison */
-        for (int i = 0; label[i]; i++) {
-            if (label[i] >= 'A' && label[i] <= 'Z')
-                label[i] += 32;
-        }
-
-        if (strstr(label, keyword)) {
-            char base_path[128];
-            snprintf(base_path, sizeof(base_path),
-                     "/sys/class/gpio/%s/base", entry->d_name);
-            FILE *bp = fopen(base_path, "r");
-            if (!bp) continue;
-            int base = 0;
-            fscanf(bp, "%d", &base);
-            fclose(bp);
-            closedir(dir);
-            return base;
-        }
+    g->fd = open(devpath, O_RDWR);
+    if (g->fd < 0) return -1;
+    g->map = mmap(NULL, MAP_SIZE, PROT_READ | PROT_WRITE,
+                  MAP_SHARED, g->fd, 0);
+    if (g->map == MAP_FAILED) {
+        close(g->fd);
+        g->fd = -1;
+        return -1;
     }
-    closedir(dir);
-    return -1;
+    return 0;
+}
+
+void uio_close(struct uio_gpio *g)
+{
+    if (g->map && g->map != MAP_FAILED)
+        munmap(g->map, MAP_SIZE);
+    if (g->fd >= 0)
+        close(g->fd);
+    g->fd = -1;
+    g->map = NULL;
+}
+
+static inline unsigned int uio_read32(struct uio_gpio *g, unsigned int offset)
+{
+    volatile unsigned int *addr =
+        (volatile unsigned int *)((char *)g->map + offset);
+    return *addr;
+}
+
+static inline void uio_write32(struct uio_gpio *g, unsigned int offset,
+                                unsigned int val)
+{
+    volatile unsigned int *addr =
+        (volatile unsigned int *)((char *)g->map + offset);
+    *addr = val;
+}
+
+/* Set pin direction: dir=0 output, dir=1 input (via GPIO_TRI register) */
+void uio_set_direction(struct uio_gpio *g, int bit, int dir)
+{
+    unsigned int tri = uio_read32(g, GPIO_TRI_OFFSET);
+    if (dir) /* input */
+        tri |= (1u << bit);
+    else     /* output */
+        tri &= ~(1u << bit);
+    uio_write32(g, GPIO_TRI_OFFSET, tri);
+}
+
+void uio_set_pin(struct uio_gpio *g, int bit, int val)
+{
+    unsigned int data = uio_read32(g, GPIO_DATA_OFFSET);
+    if (val)
+        data |= (1u << bit);
+    else
+        data &= ~(1u << bit);
+    uio_write32(g, GPIO_DATA_OFFSET, data);
+}
+
+int uio_get_pin(struct uio_gpio *g, int bit)
+{
+    return (uio_read32(g, GPIO_DATA_OFFSET) >> bit) & 1;
 }
 
 /* -------------------------------------------------- */
@@ -2019,56 +2008,41 @@ void test_leds(void)
 {
     printf("\n[TEST 1] LED Test\n");
 
-    int base = get_gpio_base("led");
-    if (base < 0) {
-        printf("  [FAIL] LED GPIO chip not found\n");
+    struct uio_gpio led;
+    if (uio_open(&led, "/dev/uio2") < 0) {
+        printf("  [FAIL] Cannot open /dev/uio2 (LED)\n");
         return;
     }
-    printf("  [OK]   LED GPIO base: %d\n", base);
+    printf("  [OK]   LED UIO opened (/dev/uio2, 0x41200000)\n");
 
-    int led_pins[] = {0, 1, 2, 3}; /* LD4 ~ LD7 */
-    int num_leds = 4;
+    /* All 4 pins as output */
+    for (int i = 0; i < 4; i++)
+        uio_set_direction(&led, i, 0);
 
-    for (int i = 0; i < num_leds; i++) {
-        int gpio = base + led_pins[i];
-        export_gpio(gpio);
-        set_gpio_direction(gpio, "out");
+    /* Individual LED test */
+    for (int i = 0; i < 4; i++) {
+        uio_set_pin(&led, i, 1);
+        usleep(300000);
 
-        /* Turn ON */
-        set_gpio_value(gpio, 1);
-        usleep(300000); /* 300ms */
+        int val = uio_get_pin(&led, i);
+        uio_set_pin(&led, i, 0);
 
-        int val = get_gpio_value(gpio);
-
-        /* Turn OFF */
-        set_gpio_value(gpio, 0);
-        unexport_gpio(gpio);
-
-        printf("  [%s] LED %d (GPIO %d): read=%d\n",
-               (val == 1) ? "OK " : "FAIL", i, gpio, val);
+        printf("  [%s] LED%d read=%d\n",
+               (val == 1) ? "OK " : "FAIL", i, val);
     }
 
     /* Chase pattern */
     printf("\n[TEST 1b] LED Chase Pattern\n");
-    int gpios[4];
-    for (int i = 0; i < 4; i++) {
-        gpios[i] = base + i;
-        export_gpio(gpios[i]);
-        set_gpio_direction(gpios[i], "out");
-    }
-
     for (int round = 0; round < 3; round++) {
         for (int i = 0; i < 4; i++) {
-            set_gpio_value(gpios[i], 1);
-            usleep(100000); /* 100ms */
-            set_gpio_value(gpios[i], 0);
+            uio_set_pin(&led, i, 1);
+            usleep(100000);
+            uio_set_pin(&led, i, 0);
         }
     }
-
-    for (int i = 0; i < 4; i++)
-        unexport_gpio(gpios[i]);
-
     printf("  [OK]   Chase pattern completed\n");
+
+    uio_close(&led);
 }
 
 /* -------------------------------------------------- */
@@ -2079,50 +2053,41 @@ void test_switches(void)
 {
     printf("\n[TEST 2] Switch Test\n");
 
-    int base = get_gpio_base("switch");
-    if (base < 0) {
-        printf("  [FAIL] Switch GPIO chip not found\n");
+    struct uio_gpio sw;
+    if (uio_open(&sw, "/dev/uio1") < 0) {
+        printf("  [FAIL] Cannot open /dev/uio1 (Switch)\n");
         return;
     }
-    printf("  [OK]   Switch GPIO base: %d\n", base);
+    printf("  [OK]   Switch UIO opened (/dev/uio1, 0x41210000)\n");
+
+    /* All pins as input */
+    for (int i = 0; i < 2; i++)
+        uio_set_direction(&sw, i, 1);
 
     for (int i = 0; i < 2; i++) {
-        int gpio = base + i;
-        export_gpio(gpio);
-        set_gpio_direction(gpio, "in");
-
-        int val = get_gpio_value(gpio);
-        unexport_gpio(gpio);
-
-        printf("  [OK]   SW%d (GPIO %d): %d\n", i, gpio, val);
+        int val = uio_get_pin(&sw, i);
+        printf("  [OK]   SW%d = %d\n", i, val);
     }
 
     /* Polling test */
     printf("\n[TEST 2b] Switch Polling (5s)\n");
-    int gpio = base;
-    export_gpio(gpio);
-    set_gpio_direction(gpio, "in");
-
-    int initial = get_gpio_value(gpio);
-    printf("  Initial value: %d, toggle switch within 5s...\n", initial);
+    int initial = uio_get_pin(&sw, 0);
+    printf("  Initial SW0=%d, toggle within 5s...\n", initial);
 
     time_t start = time(NULL);
-    int changed = 0;
-    int current = initial;
+    int changed = 0, current = initial;
     while (time(NULL) - start < 5) {
-        current = get_gpio_value(gpio);
-        if (current != initial) {
-            changed = 1;
-            break;
-        }
-        usleep(50000); /* 50ms */
+        current = uio_get_pin(&sw, 0);
+        if (current != initial) { changed = 1; break; }
+        usleep(50000);
     }
-    unexport_gpio(gpio);
 
     if (changed)
-        printf("  [OK]   Switch changed: %d -> %d\n", initial, current);
+        printf("  [OK]   SW0 changed: %d -> %d\n", initial, current);
     else
-        printf("  [OK]   No change (timeout), value=%d\n", initial);
+        printf("  [OK]   No change (timeout), SW0=%d\n", initial);
+
+    uio_close(&sw);
 }
 
 /* -------------------------------------------------- */
@@ -2133,23 +2098,23 @@ void test_buttons(void)
 {
     printf("\n[TEST 3] Button Test\n");
 
-    int base = get_gpio_base("button");
-    if (base < 0) {
-        printf("  [FAIL] Button GPIO chip not found\n");
+    struct uio_gpio btn;
+    if (uio_open(&btn, "/dev/uio0") < 0) {
+        printf("  [FAIL] Cannot open /dev/uio0 (Button)\n");
         return;
     }
-    printf("  [OK]   Button GPIO base: %d\n", base);
+    printf("  [OK]   Button UIO opened (/dev/uio0, 0x41220000)\n");
 
-    for (int i = 0; i < 3; i++) {
-        int gpio = base + i;
-        export_gpio(gpio);
-        set_gpio_direction(gpio, "in");
+    /* All pins as input */
+    for (int i = 0; i < 4; i++)
+        uio_set_direction(&btn, i, 1);
 
-        int val = get_gpio_value(gpio);
-        unexport_gpio(gpio);
-
-        printf("  [OK]   BTN%d (GPIO %d): %d\n", i, gpio, val);
+    for (int i = 0; i < 4; i++) {
+        int val = uio_get_pin(&btn, i);
+        printf("  [OK]   BTN%d = %d\n", i, val);
     }
+
+    uio_close(&btn);
 }
 
 /* -------------------------------------------------- */
@@ -2160,34 +2125,30 @@ void test_network(void)
 {
     printf("\n[TEST 5] Network Test\n");
 
-    /* Check eth0 exists */
-    int ret = system("ip addr show eth0 > /dev/null 2>&1");
+    int ret = system("ip link show eth0 > /dev/null 2>&1");
     if (ret != 0) {
         printf("  [FAIL] eth0 not found\n");
         return;
     }
     printf("  [OK]   eth0 interface found\n");
 
-    /* DHCP */
-    ret = system("dhclient -v eth0 > /dev/null 2>&1");
+    ret = system("udhcpc -i eth0 > /dev/null 2>&1");
     if (ret == 0)
-        printf("  [OK]   DHCP completed\n");
+        printf("  [OK]   DHCP completed (udhcpc)\n");
     else
         printf("  [WARN] DHCP failed (may already have IP)\n");
 
-    /* Get IP */
-    FILE *fp = popen("hostname -I", "r");
+    FILE *fp = popen("ip -4 addr show eth0 | grep inet | head -1", "r");
     if (fp) {
-        char ip[64] = {0};
-        fgets(ip, sizeof(ip), fp);
+        char line[128] = {0};
+        fgets(line, sizeof(line), fp);
         pclose(fp);
-        if (strlen(ip) > 0)
-            printf("  [OK]   IP: %s", ip);
+        if (strlen(line) > 0)
+            printf("  [OK]   %s", line);
         else
-            printf("  [FAIL] No IP assigned\n");
+            printf("  [WARN] No IPv4 address on eth0\n");
     }
 
-    /* Ping test */
     ret = system("ping -c 3 -W 2 8.8.8.8 > /dev/null 2>&1");
     printf("  [%s] Ping 8.8.8.8\n", (ret == 0) ? "OK " : "FAIL");
 }
@@ -2200,7 +2161,6 @@ void test_memory(void)
 {
     printf("\n[TEST 9] Memory/System Test\n");
 
-    /* Memory */
     FILE *fp = fopen("/proc/meminfo", "r");
     if (fp) {
         char line[256];
@@ -2213,7 +2173,6 @@ void test_memory(void)
         fclose(fp);
     }
 
-    /* CPU info */
     fp = fopen("/proc/cpuinfo", "r");
     if (fp) {
         char line[256];
@@ -2226,7 +2185,6 @@ void test_memory(void)
         fclose(fp);
     }
 
-    /* Kernel version */
     fp = popen("uname -a", "r");
     if (fp) {
         char line[256];
@@ -2244,7 +2202,6 @@ void test_hdmi(void)
 {
     printf("\n[TEST 6] HDMI Output Test\n");
 
-    /* Check /dev/fb0 */
     if (access("/dev/fb0", F_OK) == 0) {
         printf("  [OK]   /dev/fb0 found\n");
     } else {
@@ -2274,7 +2231,7 @@ void test_hdmi(void)
 int main(void)
 {
     printf("==============================================\n");
-    printf("  Zybo Z7-20 Hardware Test (C version)\n");
+    printf("  Zybo Z7-20 Hardware Test (UIO version)\n");
     printf("==============================================\n");
 
     test_memory();
@@ -2312,25 +2269,41 @@ ping -c 3 8.8.8.8
 uname -a && cat /proc/meminfo | head -5
 ```
 
-### 13.4 Python 테스트 코드
+### 13.4 Python 테스트 코드 (UIO 방식)
 
 > Python이 설치된 경우에만 사용 가능
+> UIO를 통한 PL GPIO 접근 (mmap 방식)
 > 한글 코멘트 깨짐 방지를 위해 영어로 작성
 
 ```python
 #!/usr/bin/env python3
 """
-hw_test.py - Zybo Z7-20 Hardware Test (Python version)
+hw_test.py - Zybo Z7-20 Hardware Test (Python/UIO version)
 Requires: Python 3
 
-Tests: LED, Switch, Button, Network, Memory, HDMI, System Info
+PL GPIO access via UIO (uio_pdrv_genirq driver).
+
+UIO mapping (verified):
+  uio0 -> gpio@41220000 -> Buttons (4 inputs)
+  uio1 -> gpio@41210000 -> Switches (2 inputs)
+  uio2 -> gpio@41200000 -> LEDs (4 outputs)
+
+AXI GPIO register map:
+  Offset 0x00 : GPIO_DATA  (read/write pin values)
+  Offset 0x04 : GPIO_TRI   (direction: 0=output, 1=input)
 """
 
 import os
 import sys
 import time
+import struct
 import subprocess
 from datetime import datetime
+
+try:
+    import mmap as mmap_mod
+except ImportError:
+    mmap_mod = None
 
 
 class TestResult:
@@ -2353,139 +2326,151 @@ class TestResult:
         return failed == 0
 
 
-# --- GPIO Utility Functions ---
+# --- UIO GPIO ---
 
-def find_gpio_chip(keyword):
-    base_path = "/sys/class/gpio"
-    if not os.path.exists(base_path):
-        return None
-    for entry in sorted(os.listdir(base_path)):
-        if entry.startswith("gpiochip"):
-            label_path = os.path.join(base_path, entry, "label")
-            if os.path.exists(label_path):
-                with open(label_path, "r") as f:
-                    label = f.read().strip().lower()
-                    if keyword.lower() in label:
-                        return os.path.join(base_path, entry)
-    chips = [e for e in os.listdir(base_path) if e.startswith("gpiochip")]
-    if chips:
-        return os.path.join(base_path, sorted(chips)[0])
-    return None
+MAP_SIZE = 0x10000
+GPIO_DATA_OFFSET = 0x00
+GPIO_TRI_OFFSET  = 0x04
+
+UIO_DEVS = {
+    "led":    "/dev/uio2",
+    "switch": "/dev/uio1",
+    "button": "/dev/uio0",
+}
 
 
-def get_gpio_number(gpiochip_path, pin_offset):
-    try:
-        with open(os.path.join(gpiochip_path, "base")) as f:
-            base = int(f.read().strip())
-        with open(os.path.join(gpiochip_path, "ngpio")) as f:
-            ngpio = int(f.read().strip())
-        if pin_offset >= ngpio:
-            return None
-        return base + pin_offset
-    except:
-        return None
+class UioGpio:
+    def __init__(self, devpath, num_pins=4):
+        self.fd = os.open(devpath, os.O_RDWR | os.O_SYNC)
+        self.mm = mmap_mod.mmap(self.fd, MAP_SIZE, mmap_mod.MAP_SHARED,
+                                mmap_mod.PROT_READ | mmap_mod.PROT_WRITE)
+        self.num_pins = num_pins
 
+    def close(self):
+        self.mm.close()
+        os.close(self.fd)
 
-def export_gpio(gpio_num):
-    with open("/sys/class/gpio/export", "w") as f:
-        f.write(str(gpio_num))
-    time.sleep(0.1)
+    def _read32(self, offset):
+        self.mm.seek(offset)
+        return struct.unpack("<I", self.mm.read(4))[0]
 
+    def _write32(self, offset, val):
+        self.mm.seek(offset)
+        self.mm.write(struct.pack("<I", val))
 
-def unexport_gpio(gpio_num):
-    with open("/sys/class/gpio/unexport", "w") as f:
-        f.write(str(gpio_num))
+    def set_direction(self, bit, is_input):
+        tri = self._read32(GPIO_TRI_OFFSET)
+        if is_input:
+            tri |= (1 << bit)
+        else:
+            tri &= ~(1 << bit)
+        self._write32(GPIO_TRI_OFFSET, tri)
 
+    def set_pin(self, bit, val):
+        data = self._read32(GPIO_DATA_OFFSET)
+        if val:
+            data |= (1 << bit)
+        else:
+            data &= ~(1 << bit)
+        self._write32(GPIO_DATA_OFFSET, data)
 
-def set_gpio_direction(gpio_num, direction):
-    with open(f"/sys/class/gpio/gpio{gpio_num}/direction", "w") as f:
-        f.write(direction)
+    def get_pin(self, bit):
+        return (self._read32(GPIO_DATA_OFFSET) >> bit) & 1
 
-
-def set_gpio_value(gpio_num, value):
-    with open(f"/sys/class/gpio/gpio{gpio_num}/value", "w") as f:
-        f.write(str(value))
-
-
-def get_gpio_value(gpio_num):
-    with open(f"/sys/class/gpio/gpio{gpio_num}/value", "r") as f:
-        return f.read().strip()
+    def get_all(self):
+        return self._read32(GPIO_DATA_OFFSET) & ((1 << self.num_pins) - 1)
 
 
 # --- Test: LED ---
 
 def test_leds(result):
     print("\n[TEST 1] LED Test")
-    gpio_base = find_gpio_chip("led")
-    if gpio_base is None:
-        result.add("LED - GPIO chip", False, "not found")
+    try:
+        led = UioGpio(UIO_DEVS["led"])
+    except Exception as e:
+        result.add("LED - UIO open", False, str(e))
         return
-    result.add("LED - GPIO chip", True, gpio_base)
+    result.add("LED - UIO open", True, UIO_DEVS["led"])
 
-    for pin in range(4):
-        gpio_num = get_gpio_number(gpio_base, pin)
-        if gpio_num is None:
-            result.add(f"LED {pin}", False, "gpio number failed")
-            continue
-        try:
-            export_gpio(gpio_num)
-            set_gpio_direction(gpio_num, "out")
-            set_gpio_value(gpio_num, 1)
-            time.sleep(0.3)
-            val = get_gpio_value(gpio_num)
-            set_gpio_value(gpio_num, 0)
-            result.add(f"LED {pin} (GPIO {gpio_num})", val == "1", f"val={val}")
-            unexport_gpio(gpio_num)
-        except Exception as e:
-            result.add(f"LED {pin}", False, str(e))
+    for i in range(4):
+        led.set_direction(i, False)
+
+    for i in range(4):
+        led.set_pin(i, 1)
+        time.sleep(0.3)
+        val = led.get_pin(i)
+        led.set_pin(i, 0)
+        result.add(f"LED{i}", val == 1, f"val={val}")
+
+    print("  Running chase pattern...")
+    for _ in range(3):
+        for i in range(4):
+            led.set_pin(i, 1)
+            time.sleep(0.1)
+            led.set_pin(i, 0)
+    result.add("LED chase", True)
+
+    led.close()
 
 
 # --- Test: Switch ---
 
 def test_switches(result):
     print("\n[TEST 2] Switch Test")
-    gpio_base = find_gpio_chip("switch")
-    if gpio_base is None:
-        result.add("Switch - GPIO chip", False, "not found")
+    try:
+        sw = UioGpio(UIO_DEVS["switch"], num_pins=2)
+    except Exception as e:
+        result.add("Switch - UIO open", False, str(e))
         return
-    result.add("Switch - GPIO chip", True, gpio_base)
+    result.add("Switch - UIO open", True, UIO_DEVS["switch"])
 
-    for pin in range(2):
-        gpio_num = get_gpio_number(gpio_base, pin)
-        if gpio_num is None:
-            continue
-        try:
-            export_gpio(gpio_num)
-            set_gpio_direction(gpio_num, "in")
-            val = get_gpio_value(gpio_num)
-            result.add(f"SW{pin} (GPIO {gpio_num})", True, f"val={val}")
-            unexport_gpio(gpio_num)
-        except Exception as e:
-            result.add(f"SW{pin}", False, str(e))
+    for i in range(2):
+        sw.set_direction(i, True)
+
+    for i in range(2):
+        val = sw.get_pin(i)
+        result.add(f"SW{i}", True, f"val={val}")
+
+    print("  Polling SW0 for 5s...")
+    initial = sw.get_pin(0)
+    print(f"  Initial SW0={initial}, toggle within 5s...")
+    start = time.time()
+    changed = False
+    current = initial
+    while time.time() - start < 5:
+        current = sw.get_pin(0)
+        if current != initial:
+            changed = True
+            break
+        time.sleep(0.05)
+
+    if changed:
+        result.add("SW0 polling", True, f"{initial} -> {current}")
+    else:
+        result.add("SW0 polling", True, f"timeout, val={initial}")
+
+    sw.close()
 
 
 # --- Test: Button ---
 
 def test_buttons(result):
     print("\n[TEST 3] Button Test")
-    gpio_base = find_gpio_chip("button")
-    if gpio_base is None:
-        result.add("Button - GPIO chip", False, "not found")
+    try:
+        btn = UioGpio(UIO_DEVS["button"])
+    except Exception as e:
+        result.add("Button - UIO open", False, str(e))
         return
-    result.add("Button - GPIO chip", True, gpio_base)
+    result.add("Button - UIO open", True, UIO_DEVS["button"])
 
-    for pin in range(3):
-        gpio_num = get_gpio_number(gpio_base, pin)
-        if gpio_num is None:
-            continue
-        try:
-            export_gpio(gpio_num)
-            set_gpio_direction(gpio_num, "in")
-            val = get_gpio_value(gpio_num)
-            result.add(f"BTN{pin} (GPIO {gpio_num})", True, f"val={val}")
-            unexport_gpio(gpio_num)
-        except Exception as e:
-            result.add(f"BTN{pin}", False, str(e))
+    for i in range(4):
+        btn.set_direction(i, True)
+
+    for i in range(4):
+        val = btn.get_pin(i)
+        result.add(f"BTN{i}", True, f"val={val}")
+
+    btn.close()
 
 
 # --- Test: Network ---
@@ -2493,21 +2478,30 @@ def test_buttons(result):
 def test_network(result):
     print("\n[TEST 5] Network Test")
     try:
-        subprocess.run(["dhclient", "-v", "eth0"],
+        subprocess.run(["ip", "link", "show", "eth0"],
+                       timeout=5, capture_output=True, check=True)
+        result.add("eth0 link", True)
+    except:
+        result.add("eth0 link", False, "not found")
+        return
+
+    try:
+        subprocess.run(["udhcpc", "-i", "eth0"],
                        timeout=15, capture_output=True)
         result.add("DHCP", True)
     except:
         result.add("DHCP", False, "failed")
 
     try:
-        ip = subprocess.check_output(["hostname", "-I"],
-                                     stderr=subprocess.STDOUT).decode().strip()
-        result.add("IP Address", bool(ip), ip)
+        out = subprocess.check_output(
+            ["ip", "-4", "addr", "show", "eth0"],
+            stderr=subprocess.STDOUT).decode().strip()
+        result.add("IP Address", bool(out), out.split("\n")[-1].strip() if out else "none")
     except:
         result.add("IP Address", False, "no IP")
 
     try:
-        ret = subprocess.run(["ping", "-c", "3", "8.8.8.8"],
+        ret = subprocess.run(["ping", "-c", "3", "-W", "2", "8.8.8.8"],
                              capture_output=True, timeout=10)
         result.add("Ping 8.8.8.8", ret.returncode == 0)
     except:
@@ -2557,9 +2551,13 @@ def test_hdmi(result):
 
 def main():
     print("=" * 60)
-    print("  Zybo Z7-20 Hardware Test (Python)")
+    print("  Zybo Z7-20 Hardware Test (Python/UIO)")
     print(f"  Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
+
+    if mmap_mod is None:
+        print("  [FATAL] mmap module not available")
+        sys.exit(1)
 
     result = TestResult()
     test_memory(result)
@@ -2598,27 +2596,30 @@ cat /proc/meminfo | head -5
 cat /proc/cpuinfo | grep -i hardware
 ```
 
-#### LED 빠른 테스트 (C 없이)
+#### LED 빠른 테스트 (Shell에서 UIO 확인)
 
 ```bash
-# GPIO base 번호 확인
-cat /sys/class/gpio/gpiochip*/label
+# UIO 디바이스 확인
+ls /dev/uio*
+cat /sys/class/uio/uio*/name
 
-# LED GPIO로 점등 테스트
-echo <GPIO_NUM> > /sys/class/gpio/export
-echo out > /sys/class/gpio/gpio<GPIO_NUM>/direction
-echo 1 > /sys/class/gpio/gpio<GPIO_NUM>/value
-sleep 1
-echo 0 > /sys/class/gpio/gpio<GPIO_NUM>/value
-echo <GPIO_NUM> > /sys/class/gpio/unexport
+# PL GPIO 컨트롤러 확인
+ls /sys/firmware/devicetree/base/amba_pl/gpio*
+
+# UIO LED 디바이스 열기 (uio2 = LED, 41200000)
+cat /sys/class/uio/uio2/maps/map0/addr
 ```
+
+> GPIO는 UIO 드라이버가 제어하므로, shell에서 직접 테스트하려면
+> C 또는 Python 코드를 사용해야 합니다.
 
 #### 네트워크 빠른 확인
 
 ```bash
-hostname -I
+ip link show eth0
+udhcpc -i eth0
+ip -4 addr show eth0
 ping -c 3 8.8.8.8
-ip addr show eth0
 ```
 
 #### 디바이스 트리 확인
@@ -2750,20 +2751,32 @@ cat /proc/cmdline
   6. baud rate 115200 확인
 ```
 
-### 14.5 GPIO 인식 문제
+### 14.5 GPIO 인식 문제 (UIO 관련)
 
 ```
 증상: /sys/class/gpio/에 해당 디바이스 없음
+      또는 sysfs GPIO로 PL GPIO 제어 불가
+
+원인: Zybo Z7-20의 PL GPIO는 UIO 드라이버(uio_pdrv_genirq)에 의해 점유됨
+      - uio0 = Buttons (41220000)
+      - uio1 = Switches (41210000)
+      - uio2 = LEDs (41200000)
+
 해결:
-  1. UIO 커널 모듈 확인:
+  1. UIO 디바이스 확인:
+     ls /dev/uio*
+     cat /sys/class/uio/uio*/name
+
+  2. PL GPIO 컨트롤러 확인:
+     ls /sys/firmware/devicetree/base/amba_pl/gpio*
+
+  3. UIO 커널 모듈 확인:
      lsmod | grep uio
-  2. 모듈 로드:
-     modprobe uio_pdrv_genirq
-  3. 디바이스 트리 확인:
-     ls /sys/firmware/devicetree/base/
-  4. bootargs 확인:
-     cat /proc/cmdline
-     # uio_pdrv_genirq.of_id=generic-uio 포함 여부
+
+  4. GPIO 테스트는 C 또는 Python UIO 코드 사용:
+     # hw_test.c 또는 hw_test.py (UIO 방식) 사용
+     gcc -o hw_test hw_test.c
+     ./hw_test
 ```
 
 ### 14.6 디바이스 트리 소스 수정
@@ -2772,9 +2785,13 @@ cat /proc/cmdline
 # 최신 버전: system-user.dtsi 위치
 nano project-spec/meta-user/recipes-bsp/device-tree/files/system-user.dtsi
 
+# PL GPIO에 UIO compatible 추가 (이미 BSP에 포함된 경우 무시):
+# compatible = "generic-uio";
+# status = "okay";
+
 # 수정 후 재빌드
 petalinux-build
-petalinux-package --boot --force --fsbl images/linux/zynq_fsbl.elf --fpga images/linux/system_wrapper.bit --u-boot
+petalinux-package --boot --force --fsbl images/linux/zynq_fsbl.elf --fpga images/linux/system.bit --u-boot
 ```
 
 ---
