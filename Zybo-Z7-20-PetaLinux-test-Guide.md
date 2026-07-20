@@ -13,6 +13,8 @@
 5. [SD카드 준비 및 부팅](#5-sd카드-준비-및-부팅)
 6. [보드 동작 테스트 (Python)](#6-보드-동작-테스트-python)
 7. [문제 해결](#7-문제-해결)
+14. [문제 해결 - 최신 업데이트](#14-문제-해결---최신-업데이트)
+15. [카메라 → HDMI 테스트 (MIPI CSI-2)](#15-카메라--hdmi-테스트-mipi-csi-2-input)
 
 ---
 
@@ -2919,8 +2921,409 @@ os/  (BSP 프로젝트 디렉토리)
 
 ---
 
-> **최종 업데이트:** 2026-07-20 (실제 빌드 검증 완료)
+## 15. 카메라 → HDMI 테스트 (MIPI CSI-2 Input)
+
+### 15.1 하드웨어 구성
+
+```
+[Raspberry Pi Camera Rev 1.3]
+        |
+        |  (15-pin FFC, 1mm pitch)
+        ↓
+[Zybo Z7-20 Pcam 커넥터]
+        |
+        |  MIPI CSI-2 (2 lanes) + I2C
+        ↓
+[FPGA: mipi_csi2_rx_subsystem_0]
+        |
+        |  AXI Stream
+        ↓
+[FPGA: v_frmbuf_wr_0] → DDR3 메모리
+        |
+        ↓
+[HDMI TX] → 모니터
+```
+
+**필수 하드웨어:**
+- Raspberry Pi Camera Rev 1.3 (FFC 케이블 포함)
+- HDMI 케이블 (HDMI TX → 모니터)
+- SD 카드 (부팅용)
+
+### 15.2 카메라 연결 확인
+
+```bash
+# 카메라 디바이스 확인
+ls /dev/video*
+# 예상: /dev/video0
+
+# V4L2 디바이스 목록
+v4l2-ctl --list-devices
+
+# MIPI 관련 커널 메시지
+dmesg | grep -i "mipi\|csi\|video\|xilinx"
+
+# I2C 디바이스 확인 (카메라 센서 주소)
+ls /sys/bus/i2c/devices/
+cat /sys/bus/i2c/devices/*/name 2>/dev/null
+```
+
+### 15.3 카메라 → HDMI 테스트 코드
+
+**소스 파일:** `cam2hdmi_test.c` (별도 파일로 저장)
+
+```c
+/*
+ * cam2hdmi_test.c - Camera (MIPI CSI-2) to HDMI (Framebuffer) Test
+ * For Zybo Z7-20 + Raspberry Pi Camera Rev 1.3
+ *
+ * Build: gcc -o cam2hdmi_test cam2hdmi_test.c
+ * Run:   sudo ./cam2hdmi_test
+ *
+ * Pipeline: /dev/video0 (V4L2) -> YUYV->RGB565 -> /dev/fb0 (HDMI)
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/time.h>
+#include <linux/fb.h>
+#include <linux/videodev2.h>
+
+#define CAMERA_DEV  "/dev/video0"
+#define FB_DEV      "/dev/fb0"
+#define NUM_BUFFERS 4
+#define TARGET_W    640
+#define TARGET_H    480
+
+struct fb_info {
+    int fd, width, height, bpp, stride;
+    unsigned char *map;
+    size_t map_size;
+};
+
+struct v4l2_buf {
+    void *start;
+    size_t length;
+};
+
+int fb_open(struct fb_info *fb)
+{
+    struct fb_var_screeninfo vinfo;
+    struct fb_fix_screeninfo finfo;
+
+    fb->fd = open(FB_DEV, O_RDWR);
+    if (fb->fd < 0) { perror("fb open"); return -1; }
+
+    if (ioctl(fb->fd, FBIOGET_VSCREENINFO, &vinfo) < 0) { perror("fb var"); close(fb->fd); return -1; }
+    if (ioctl(fb->fd, FBIOGET_FSCREENINFO, &finfo) < 0) { perror("fb fix"); close(fb->fd); return -1; }
+
+    fb->width  = vinfo.xres;
+    fb->height = vinfo.yres;
+    fb->bpp    = vinfo.bits_per_pixel;
+    fb->stride = finfo.line_length;
+    fb->map_size = finfo.smem_len;
+    fb->map = mmap(NULL, fb->map_size, PROT_READ|PROT_WRITE, MAP_SHARED, fb->fd, 0);
+    if (fb->map == MAP_FAILED) { perror("fb mmap"); close(fb->fd); return -1; }
+
+    printf("  [FB]  %dx%d, %dbpp, stride=%d\n", fb->width, fb->height, fb->bpp, fb->stride);
+    return 0;
+}
+
+int cam_open(struct v4l2_buf buffers[], int *nbufs, int *width, int *height, int *pixfmt)
+{
+    int fd = open(CAMERA_DEV, O_RDWR | O_NONBLOCK);
+    if (fd < 0) { perror("cam open"); return -1; }
+
+    struct v4l2_capability cap;
+    if (ioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) { perror("QUERYCAP"); close(fd); return -1; }
+    printf("  [CAM] driver: %s, card: %s\n", cap.driver, cap.card);
+
+    if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
+        printf("  [FAIL] No VIDEO_CAPTURE capability\n");
+        close(fd); return -1;
+    }
+
+    struct v4l2_format fmt;
+    memset(&fmt, 0, sizeof(fmt));
+    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    fmt.fmt.pix.width  = TARGET_W;
+    fmt.fmt.pix.height = TARGET_H;
+    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+
+    if (ioctl(fd, VIDIOC_S_FMT, &fmt) < 0) {
+        perror("VIDIOC_S_FMT");
+        close(fd); return -1;
+    }
+
+    *width  = fmt.fmt.pix.width;
+    *height = fmt.fmt.pix.height;
+    *pixfmt = fmt.fmt.pix.pixelformat;
+
+    const char *fn = "unknown";
+    switch (*pixfmt) {
+        case V4L2_PIX_FMT_YUYV: fn = "YUYV"; break;
+        case V4L2_PIX_FMT_NV12: fn = "NV12"; break;
+        case V4L2_PIX_FMT_GREY: fn = "GREY"; break;
+        case V4L2_PIX_FMT_RGB565: fn = "RGB565"; break;
+    }
+    printf("  [CAM] format: %s (%dx%d)\n", fn, *width, *height);
+
+    struct v4l2_requestbuffers req = {0};
+    req.count = NUM_BUFFERS;
+    req.type  = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.memory = V4L2_MEMORY_MMAP;
+    if (ioctl(fd, VIDIOC_REQBUFS, &req) < 0) { perror("REQBUFS"); close(fd); return -1; }
+    *nbufs = req.count;
+
+    for (int i = 0; i < *nbufs; i++) {
+        struct v4l2_buffer buf = {0};
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index = i;
+        if (ioctl(fd, VIDIOC_QUERYBUF, &buf) < 0) { perror("QUERYBUF"); close(fd); return -1; }
+        buffers[i].length = buf.length;
+        buffers[i].start = mmap(NULL, buf.length, PROT_READ|PROT_WRITE, MAP_SHARED, fd, buf.m.offset);
+        if (buffers[i].start == MAP_FAILED) { perror("cam mmap"); close(fd); return -1; }
+        if (ioctl(fd, VIDIOC_QBUF, &buf) < 0) { perror("QBUF"); close(fd); return -1; }
+    }
+
+    int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (ioctl(fd, VIDIOC_STREAMON, &type) < 0) { perror("STREAMON"); close(fd); return -1; }
+    printf("  [CAM] streaming started (%d buffers)\n", *nbufs);
+    return fd;
+}
+
+void yuyv_to_rgb565(const unsigned char *yuyv, int w, int h,
+                     unsigned char *rgb565, int fb_stride)
+{
+    for (int row = 0; row < h; row++) {
+        unsigned char *dst = rgb565 + row * fb_stride;
+        const unsigned char *src = yuyv + row * w * 2;
+        for (int col = 0; col < w; col += 2) {
+            int y0=src[0], u=src[1], y1=src[2], v=src[3]; src += 4;
+            int c0=y0-16, c1=y1-16, d=u-128, e=v-128;
+            int r0=(298*c0+409*e+128)>>8, g0=(298*c0-100*d-208*e+128)>>8, b0=(298*c0+516*d+128)>>8;
+            int r1=(298*c1+409*e+128)>>8, g1=(298*c1-100*d-208*e+128)>>8, b1=(298*c1+516*d+128)>>8;
+            if(r0<0)r0=0;if(r0>255)r0=255;if(g0<0)g0=0;if(g0>255)g0=255;if(b0<0)b0=0;if(b0>255)b0=255;
+            if(r1<0)r1=0;if(r1>255)r1=255;if(g1<0)g1=0;if(g1>255)g1=255;if(b1<0)b1=0;if(b1>255)b1=255;
+            unsigned short p0=((r0>>3)<<11)|((g0>>2)<<5)|(b0>>3);
+            unsigned short p1=((r1>>3)<<11)|((g1>>2)<<5)|(b1>>3);
+            dst[0]=p0&0xFF; dst[1]=(p0>>8)&0xFF; dst[2]=p1&0xFF; dst[3]=(p1>>8)&0xFF;
+            dst += 4;
+        }
+    }
+}
+
+void fb_write_centered(struct fb_info *fb, const unsigned char *src, int sw, int sh)
+{
+    memset(fb->map, 0, fb->map_size);
+    int xoff = (fb->width - sw) / 2;
+    int yoff = (fb->height - sh) / 2;
+    if (xoff < 0) xoff = 0; if (yoff < 0) yoff = 0;
+    int bpp = fb->bpp / 8;
+    int copy_w = sw * bpp;
+    if (copy_w > fb->stride) copy_w = fb->stride;
+    for (int r = 0; r < sh && (yoff+r) < fb->height; r++)
+        memcpy(fb->map + (yoff+r)*fb->stride + xoff*bpp, src + r*sw*bpp, copy_w);
+}
+
+int main(int argc, char *argv[])
+{
+    printf("==============================================\n");
+    printf("  Camera to HDMI Test (Zybo Z7-20)\n");
+    printf("==============================================\n\n");
+
+    struct fb_info fb;
+    printf("[STEP 1] Open framebuffer\n");
+    if (fb_open(&fb) < 0) { printf("  [FATAL] No framebuffer\n"); return 1; }
+
+    printf("\n[STEP 2] Open camera\n");
+    struct v4l2_buf cam_bufs[NUM_BUFFERS];
+    int nbufs=0, cam_w=0, cam_h=0, pixfmt=0;
+    int cam_fd = cam_open(cam_bufs, &nbufs, &cam_w, &cam_h, &pixfmt);
+    if (cam_fd < 0) {
+        printf("  [FATAL] Camera not available.\n");
+        printf("  Check: ls /dev/video* ; dmesg | grep -i mipi\n");
+        munmap(fb.map, fb.map_size); close(fb.fd); return 1;
+    }
+
+    printf("\n[STEP 3] Capture -> Display (Ctrl+C to stop)\n");
+    unsigned char *cvt = malloc(cam_w * cam_h * 2);
+    if (!cvt) { goto cleanup; }
+
+    int fc = 0;
+    struct timeval t0, t1;
+    gettimeofday(&t0, NULL);
+
+    while (1) {
+        fd_set fds; FD_ZERO(&fds); FD_SET(cam_fd, &fds);
+        struct timeval tv = {2, 0};
+        int r = select(cam_fd+1, &fds, NULL, NULL, &tv);
+        if (r < 0) { if (errno==EINTR) continue; break; }
+        if (r == 0) { printf("  [WARN] timeout\n"); continue; }
+
+        struct v4l2_buffer buf = {0};
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        if (ioctl(cam_fd, VIDIOC_DQBUF, &buf) < 0) { if (errno==EAGAIN) continue; break; }
+
+        fc++;
+        if (pixfmt == V4L2_PIX_FMT_YUYV) {
+            yuyv_to_rgb565(cam_bufs[buf.index].start, cam_w, cam_h, cvt, fb.stride);
+            fb_write_centered(&fb, cvt, cam_w, cam_h);
+        } else {
+            fb_write_centered(&fb, cam_bufs[buf.index].start, cam_w, cam_h);
+        }
+
+        if (ioctl(cam_fd, VIDIOC_QBUF, &buf) < 0) break;
+
+        if (fc % 30 == 0) {
+            gettimeofday(&t1, NULL);
+            double el = (t1.tv_sec-t0.tv_sec)+(t1.tv_usec-t0.tv_usec)/1e6;
+            printf("\r  [FRAME %d] %.1f FPS   ", fc, fc/el);
+            fflush(stdout);
+        }
+    }
+    printf("\n  Captured %d frames\n", fc);
+    free(cvt);
+
+cleanup: ;
+    int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    ioctl(cam_fd, VIDIOC_STREAMOFF, &type);
+    for (int i=0; i<nbufs; i++) munmap(cam_bufs[i].start, cam_bufs[i].length);
+    close(cam_fd);
+    munmap(fb.map, fb.map_size); close(fb.fd);
+    printf("  [DONE]\n");
+    return 0;
+}
+```
+
+### 15.4 빌드 및 실행
+
+```bash
+# 보드에서 빌드
+gcc -o cam2hdmi_test cam2hdmi_test.c -lm
+
+# 실행 (카메라 연결 상태에서)
+sudo ./cam2hdmi_test
+
+# 중지: Ctrl+C
+```
+
+### 15.5 문제 해결
+
+```bash
+# 카메라 인식 안 될 때
+dmesg | grep -i "mipi\|csi\|video\|ov5647\|imx219"
+v4l2-ctl --list-devices
+ls /sys/bus/i2c/devices/
+
+# I2C로 카메라 센서 확인
+i2cdetect -y 0    # I2C 버스 0
+i2cdetect -y 1    # I2C 버스 1
+
+# 프레임버퍼 확인
+cat /sys/class/graphics/fb0/virtual_size
+cat /sys/class/graphics/fb0/bits_per_pixel
+
+# MIPI CSI-2 레지스터 디버그
+devmem2 0x43C60000 w    # CSI2RX base
+```
+
+**에러 발생 시:**
+- `/dev/video0` 없음 → MIPI CSI-2 드라이버 미로드, `modprobe xilinx-csi2rxs` 시도
+- `VIDIOC_S_FMT` 실패 → 카메라 미연결 또는 I2C 통신 불량
+- 프레임 안 나옴 → FFC 케이블 방향 확인, 카메라 전원(3.3V) 확인
+
+### 15.6 디바이스 트리 구성 (실제 확인)
+
+```
+amba_pl/
+├── mipi_csi2_rx_subsystem@43c60000/    ← MIPI CSI-2 RX + D-PHY
+│   ├── compatible: "xlnx,mipi-csi2-rx-subsystem-5.1"
+│   ├── ports/
+│   ├── xlnx,dphy-lanes: 2
+│   └── xlnx,csi-pxl-format: ...
+├── v_frmbuf_wr@43c80000/              ← 프레임버프 라이터 (VDMA)
+├── vcap_mipi_csi2_rx_subsystem_0/      ← V4L2 비디오 캡처 디바이스
+│   ├── compatible: "xlnx,video"
+│   └── ports/
+├── i2c@41600000/                       ← PL I2C (카메라 제어)
+└── v_tc@43c00000/, v_tc@43c10000/     ← 비디오 타이밍 컨트롤러
+```
+
+### 15.7 현재 카메라 상태 (진단 결과 - 2026-07-20)
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| `/dev/video0` | **있음** | `xilinx-vipp` 드라이버, Multiplanar |
+| I2C 센서 감지 | **`2-003c` = ov5640** | I2C bus 2, address 0x3C |
+| 센서 프로브 | **실패** | register 0x300A 읽기 오류 (error -5) |
+| `/dev/media0` | **없음** | Media Controller 미활성화 |
+| ENUM_FMT | **빈 결과** | 지원 포맷 목록 없음 |
+| REQBUFS | **모두 실패** | 모든 type/mem 조합에서 EINVAL |
+| Format | **1920x0** | height=0 → 입력 신호 없음 |
+| 커널 모듈 | **없음** | 전부 built-in (`lsmod` 결과 빈) |
+
+**진단 dmesg 로그:**
+```
+xilinx-video: device registered
+xilinx-video: Entity type for entity 43c60000.mipi_csi2_rx_subsystem was not initialized!
+ov5640 2-003c: probe
+ov5640 2-003c: ov5640_read_reg: error: reg=300a
+ov5640 2-003c: ov5640_check_chip_id: failed to read chip identifier
+ov5640: probe of 2-003c failed with error -5
+```
+
+**커널 설정 확인:**
+```
+CONFIG_MEDIA_CONTROLLER=y       ← 정상
+CONFIG_VIDEO_V4L2=y             ← 정상
+CONFIG_VIDEO_V4L2_SUBDEV_API=y  ← 정상
+CONFIG_V4L2_FWNODE=y            ← 정상
+CONFIG_V4L2_ASYNC=y             ← 정상
+```
+
+**커널 설정은 정상이지만 드라이버/디바이스 트리 수준에서 미디어 파이프라인이 구성되지 않음.**
+
+### 15.8 문제 분석
+
+#### 원인 1: OV5640 프로브 실패
+
+```
+ov5640_read_reg: error: reg=300a  → I2C로 센서 레지스터 읽기 실패
+```
+
+가능한 원인:
+1. **FFC 케이블 접촉 불량** - 가장 흔한 원인
+2. **카메라 전원 미공급** - PS_GPIO_2 (cam_gpio) 미활성화
+3. **센서 불일치** - 실크 "Rev 1.3"(OV5647 예상) vs 디바이스 트리 OV5640
+
+#### 원인 2: Media Controller 미구성
+
+- `xilinx-video` 드라이버가 entity 그래프를 초기화하지 못함
+- `/dev/media0` 미생성 → `media-ctl`로 파이프라인 설정 불가
+- → V4L2 REQBUFS 실패의 근본 원인
+
+### 15.9 다음 단계 (이어서 진행할 항목)
+
+- [ ] FFC 케이블 재장착 후 `sudo ./cam_diag` 재실행
+- [ ] 카메라 전원 GPIO (cam_gpio) 활성화 확인
+- [ ] OV5647용 디바이스 트리 수정 (PetaLinux 재빌드)
+- [ ] Media Controller 활성화를 위한 디바이스 트리 수정
+- [ ] 카메라 프로브 성공 시 V4L2 스트리밍 테스트
+- [ ] 카메라→HDMI 실시간 영상 테스트 (`sudo ./cam2hdmi_test`)
+- [ ] Ethernet 테스트 (`udhcpc -i eth0` 또는 static IP)
+
+---
+
+> **최종 업데이트:** 2026-07-20
 > **대상 보드:** Digilent Zybo Z7-20 (XC7Z020-1CLG400C)
-> **PetaLinux 버전:** 2017.4 (Part 1) / 2022.1 (Part 2)
-> **Ubuntu 버전:** 16.04 LTS (Part 1) / 20.04 LTS (Part 2)
+> **PetaLinux 버전:** 2022.1
+> **Ubuntu 버전:** 20.04 LTS
 > **빌드 검증 환경:** VirtualBox + Ubuntu 20.04 + PetaLinux 2022.1
