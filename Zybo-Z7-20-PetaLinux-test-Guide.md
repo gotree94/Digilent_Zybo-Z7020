@@ -1896,10 +1896,12 @@ scp hw_test.py petalinux@<BOARD_IP>:/home/petalinux/
  *
  * PL GPIO access via UIO (uio_pdrv_genirq driver).
  *
- * UIO mapping (verified):
- *   uio0 -> gpio@41220000 -> LEDs (4 outputs)
- *   uio1 -> gpio@41210000 -> Switches (2 inputs)
- *   uio2 -> gpio@41200000 -> Buttons (4 inputs)
+ * UIO mapping (verified from system.xsa):
+ *   uio0 -> axi_gpio_led    (0x41220000) -> LEDs Ch1 (4 outputs)
+ *   uio1 -> axi_gpio_sw_btn (0x41210000) -> Switches Ch1 (4 inputs)
+ *                                          -> Buttons   Ch2 (4 inputs, offset 0x08)
+ *   uio2 -> axi_gpio_video  (0x41200000) -> HDMI Hotplug Detect (1 bit)
+ *   uio3 -> axi_gpio_eth    (0x41230000) -> Ethernet Reset (1 bit)
  *
  * AXI GPIO register map:
  *   Offset 0x00 : GPIO_DATA  (read/write pin values)
@@ -1921,9 +1923,11 @@ scp hw_test.py petalinux@<BOARD_IP>:/home/petalinux/
 /* PL GPIO via UIO                                    */
 /* -------------------------------------------------- */
 
-#define GPIO_TRI_OFFSET  0x04
 #define GPIO_DATA_OFFSET 0x00
-#define MAP_SIZE         0x10000
+#define GPIO_TRI_OFFSET  0x04
+#define GPIO2_DATA_OFFSET 0x08
+#define GPIO2_TRI_OFFSET  0x0C
+#define MAP_SIZE          0x10000
 
 /* UIO device addresses (from /sys/class/uio/uioN/maps/map0/addr) */
 #define UIO_ADDR_LEDS    0x41220000
@@ -2006,7 +2010,7 @@ int uio_get_pin(struct uio_gpio *g, int bit)
 
 void test_leds(void)
 {
-    printf("\n[TEST 1] LED Test (LD4~LD9, 6 LEDs)\n");
+    printf("\n[TEST 1] LED Test (LD4~LD7, 4 LEDs)\n");
 
     struct uio_gpio led;
     if (uio_open(&led, "/dev/uio0") < 0) {
@@ -2015,13 +2019,13 @@ void test_leds(void)
     }
     printf("  [OK]   LED UIO opened (/dev/uio0, 0x41220000)\n");
 
-    /* All 6 pins as output */
+    /* All 4 pins as output */
     int i;
-    for (i = 0; i < 6; i++)
+    for (i = 0; i < 4; i++)
         uio_set_direction(&led, i, 0);
 
     /* Individual LED test */
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < 4; i++) {
         uio_set_pin(&led, i, 1);
         usleep(300000);
 
@@ -2036,7 +2040,7 @@ void test_leds(void)
     printf("\n[TEST 1b] LED Chase Pattern\n");
     int round;
     for (round = 0; round < 3; round++) {
-        for (i = 0; i < 6; i++) {
+        for (i = 0; i < 4; i++) {
             uio_set_pin(&led, i, 1);
             usleep(100000);
             uio_set_pin(&led, i, 0);
@@ -2099,21 +2103,25 @@ void test_switches(void)
 
 void test_buttons(void)
 {
-    printf("\n[TEST 3] Button Test\n");
+    printf("\n[TEST 3] Button Test (Channel 2 of uio1)\n");
 
     struct uio_gpio btn;
-    if (uio_open(&btn, "/dev/uio2") < 0) {
-        printf("  [FAIL] Cannot open /dev/uio2 (Button)\n");
+    if (uio_open(&btn, "/dev/uio1") < 0) {
+        printf("  [FAIL] Cannot open /dev/uio1 (Button)\n");
         return;
     }
-    printf("  [OK]   Button UIO opened (/dev/uio2, 0x41200000)\n");
+    printf("  [OK]   Button UIO opened (/dev/uio1 Ch2, 0x41210000+0x08)\n");
 
-    /* All pins as input */
-    for (int i = 0; i < 4; i++)
-        uio_set_direction(&btn, i, 1);
+    /* Channel 2: All pins as input (GPIO2_TRI) */
+    int i;
+    for (i = 0; i < 4; i++) {
+        unsigned int tri = uio_read32(&btn, GPIO2_TRI_OFFSET);
+        tri |= (1u << i);
+        uio_write32(&btn, GPIO2_TRI_OFFSET, tri);
+    }
 
-    for (int i = 0; i < 4; i++) {
-        int val = uio_get_pin(&btn, i);
+    for (i = 0; i < 4; i++) {
+        int val = (uio_read32(&btn, GPIO2_DATA_OFFSET) >> i) & 1;
         printf("  [OK]   BTN%d = %d\n", i, val);
     }
 
@@ -2139,21 +2147,57 @@ void test_network(void)
     if (ret == 0)
         printf("  [OK]   DHCP completed (udhcpc)\n");
     else
-        printf("  [WARN] DHCP failed (may already have IP)\n");
+        printf("  [WARN] DHCP failed, trying static IP 192.168.1.10\n");
 
     FILE *fp = popen("ip -4 addr show eth0 | grep inet | head -1", "r");
+    char line[128] = {0};
     if (fp) {
-        char line[128] = {0};
         fgets(line, sizeof(line), fp);
         pclose(fp);
-        if (strlen(line) > 0)
-            printf("  [OK]   %s", line);
-        else
-            printf("  [WARN] No IPv4 address on eth0\n");
     }
 
+    if (strlen(line) == 0) {
+        printf("  [INFO] Setting static IP 192.168.1.10/24\n");
+        system("ip addr add 192.168.1.10/24 dev eth0 2>/dev/null");
+        system("ip link set eth0 up 2>/dev/null");
+        sleep(1);
+        fp = popen("ip -4 addr show eth0 | grep inet | head -1", "r");
+        if (fp) {
+            fgets(line, sizeof(line), fp);
+            pclose(fp);
+        }
+    }
+
+    if (strlen(line) > 0)
+        printf("  [OK]   %s", line);
+    else
+        printf("  [FAIL] No IPv4 address on eth0\n");
+
     ret = system("ping -c 3 -W 2 8.8.8.8 > /dev/null 2>&1");
-    printf("  [%s] Ping 8.8.8.8\n", (ret == 0) ? "OK " : "FAIL");
+    printf("  [%s] Ping 8.8.8.8\n", (ret == 0) ? "OK " : "FAIL (check cable/DHCP)");
+}
+
+/* -------------------------------------------------- */
+/* Test: HDMI Input (V4L2)                            */
+/* -------------------------------------------------- */
+
+void test_hdmi_in(void)
+{
+    printf("\n[TEST 6] HDMI Input Test (V4L2)\n");
+
+    if (access("/dev/video0", F_OK) != 0) {
+        printf("  [SKIP] /dev/video0 not found (no HDMI input)\n");
+        return;
+    }
+    printf("  [OK]   /dev/video0 found\n");
+
+    /* Check format */
+    int ret = system("v4l2-ctl --device=/dev/video0 --list-formats-ext 2>/dev/null | head -10");
+    if (ret != 0)
+        printf("  [WARN] v4l2-ctl not available\n");
+
+    printf("  [INFO] Connect HDMI source, then run:\n");
+    printf("         v4l2-ctl --device=/dev/video0 --stream-mmap --stream-count=1 --stream-to=hdmi_in.raw\n");
 }
 
 /* -------------------------------------------------- */
@@ -2243,6 +2287,7 @@ int main(void)
     test_buttons();
     test_network();
     test_hdmi();
+    test_hdmi_in();
 
     printf("\n==============================================\n");
     printf("  All tests completed\n");
@@ -2286,10 +2331,12 @@ Requires: Python 3
 
 PL GPIO access via UIO (uio_pdrv_genirq driver).
 
-UIO mapping (verified):
-  uio0 -> gpio@41220000 -> LEDs (4 outputs)
-  uio1 -> gpio@41210000 -> Switches (2 inputs)
-  uio2 -> gpio@41200000 -> Buttons (4 inputs)
+UIO mapping (verified from system.xsa):
+  uio0 -> axi_gpio_led    (0x41220000) -> LEDs Ch1 (4 outputs)
+  uio1 -> axi_gpio_sw_btn (0x41210000) -> Switches Ch1 (4 inputs, offset 0x00)
+                                         -> Buttons   Ch2 (4 inputs, offset 0x08)
+  uio2 -> axi_gpio_video  (0x41200000) -> HDMI Hotplug Detect
+  uio3 -> axi_gpio_eth    (0x41230000) -> Ethernet Reset
 
 AXI GPIO register map:
   Offset 0x00 : GPIO_DATA  (read/write pin values)
@@ -2332,22 +2379,30 @@ class TestResult:
 # --- UIO GPIO ---
 
 MAP_SIZE = 0x10000
-GPIO_DATA_OFFSET = 0x00
-GPIO_TRI_OFFSET  = 0x04
+GPIO_DATA_OFFSET  = 0x00
+GPIO_TRI_OFFSET   = 0x04
+GPIO2_DATA_OFFSET = 0x08
+GPIO2_TRI_OFFSET  = 0x0C
 
 UIO_DEVS = {
     "led":    "/dev/uio0",
     "switch": "/dev/uio1",
-    "button": "/dev/uio2",
+    "button": "/dev/uio1",  # Channel 2 (offset 0x08)
 }
 
 
 class UioGpio:
-    def __init__(self, devpath, num_pins=4):
+    def __init__(self, devpath, num_pins=4, channel=1):
         self.fd = os.open(devpath, os.O_RDWR | os.O_SYNC)
         self.mm = mmap_mod.mmap(self.fd, MAP_SIZE, mmap_mod.MAP_SHARED,
                                 mmap_mod.PROT_READ | mmap_mod.PROT_WRITE)
         self.num_pins = num_pins
+        if channel == 2:
+            self.data_offset = GPIO2_DATA_OFFSET
+            self.tri_offset = GPIO2_TRI_OFFSET
+        else:
+            self.data_offset = GPIO_DATA_OFFSET
+            self.tri_offset = GPIO_TRI_OFFSET
 
     def close(self):
         self.mm.close()
@@ -2362,23 +2417,23 @@ class UioGpio:
         self.mm.write(struct.pack("<I", val))
 
     def set_direction(self, bit, is_input):
-        tri = self._read32(GPIO_TRI_OFFSET)
+        tri = self._read32(self.tri_offset)
         if is_input:
             tri |= (1 << bit)
         else:
             tri &= ~(1 << bit)
-        self._write32(GPIO_TRI_OFFSET, tri)
+        self._write32(self.tri_offset, tri)
 
     def set_pin(self, bit, val):
-        data = self._read32(GPIO_DATA_OFFSET)
+        data = self._read32(self.data_offset)
         if val:
             data |= (1 << bit)
         else:
             data &= ~(1 << bit)
-        self._write32(GPIO_DATA_OFFSET, data)
+        self._write32(self.data_offset, data)
 
     def get_pin(self, bit):
-        return (self._read32(GPIO_DATA_OFFSET) >> bit) & 1
+        return (self._read32(self.data_offset) >> bit) & 1
 
     def get_all(self):
         return self._read32(GPIO_DATA_OFFSET) & ((1 << self.num_pins) - 1)
@@ -2387,18 +2442,18 @@ class UioGpio:
 # --- Test: LED ---
 
 def test_leds(result):
-    print("\n[TEST 1] LED Test (LD4~LD9, 6 LEDs)")
+    print("\n[TEST 1] LED Test (LD4~LD7, 4 LEDs)")
     try:
-        led = UioGpio(UIO_DEVS["led"], num_pins=6)
+        led = UioGpio(UIO_DEVS["led"], num_pins=4)
     except Exception as e:
         result.add("LED - UIO open", False, str(e))
         return
     result.add("LED - UIO open", True, UIO_DEVS["led"])
 
-    for i in range(6):
+    for i in range(4):
         led.set_direction(i, False)
 
-    for i in range(6):
+    for i in range(4):
         led.set_pin(i, 1)
         time.sleep(0.3)
         val = led.get_pin(i)
@@ -2407,7 +2462,7 @@ def test_leds(result):
 
     print("  Running chase pattern...")
     for _ in range(3):
-        for i in range(6):
+        for i in range(4):
             led.set_pin(i, 1)
             time.sleep(0.1)
             led.set_pin(i, 0)
@@ -2458,13 +2513,13 @@ def test_switches(result):
 # --- Test: Button ---
 
 def test_buttons(result):
-    print("\n[TEST 3] Button Test")
+    print("\n[TEST 3] Button Test (Channel 2 of uio1)")
     try:
-        btn = UioGpio(UIO_DEVS["button"])
+        btn = UioGpio(UIO_DEVS["button"], channel=2)
     except Exception as e:
         result.add("Button - UIO open", False, str(e))
         return
-    result.add("Button - UIO open", True, UIO_DEVS["button"])
+    result.add("Button - UIO open", True, UIO_DEVS["button"] + " Ch2")
 
     for i in range(4):
         btn.set_direction(i, True)
@@ -2550,6 +2605,20 @@ def test_hdmi(result):
                 result.add("DRM connectors", False, "none")
 
 
+def test_hdmi_in(result):
+    print("\n[TEST 7] HDMI Input Test (V4L2)")
+    if os.path.exists("/dev/video0"):
+        result.add("/dev/video0", True)
+    else:
+        result.add("/dev/video0", False, "not found")
+    try:
+        subprocess.run(["v4l2-ctl", "--device=/dev/video0", "--list-formats"],
+                       timeout=5, capture_output=True)
+        result.add("V4L2 query", True)
+    except Exception as e:
+        result.add("V4L2 query", False, str(e))
+
+
 # --- Main ---
 
 def main():
@@ -2569,6 +2638,7 @@ def main():
     test_buttons(result)
     test_network(result)
     test_hdmi(result)
+    test_hdmi_in(result)
     result.summary()
 
 
@@ -2609,8 +2679,8 @@ cat /sys/class/uio/uio*/name
 # PL GPIO 컨트롤러 확인
 ls /sys/firmware/devicetree/base/amba_pl/gpio*
 
-# UIO LED 디바이스 열기 (uio2 = LED, 41200000)
-cat /sys/class/uio/uio2/maps/map0/addr
+# UIO LED 디바이스 열기 (uio0 = LED, 41220000)
+cat /sys/class/uio/uio0/maps/map0/addr
 ```
 
 > GPIO는 UIO 드라이버가 제어하므로, shell에서 직접 테스트하려면
@@ -2761,9 +2831,10 @@ cat /proc/cmdline
       또는 sysfs GPIO로 PL GPIO 제어 불가
 
 원인: Zybo Z7-20의 PL GPIO는 UIO 드라이버(uio_pdrv_genirq)에 의해 점유됨
-      - uio0 = LEDs (41220000, 6 outputs)
-      - uio1 = Switches (41210000, 4 inputs)
-      - uio2 = Buttons (41200000, 4 inputs)
+      - uio0 = LEDs (41220000, 4 outputs)
+      - uio1 = Switches+Buttons (41210000, Ch1=SW 4 inputs, Ch2=BTN 4 inputs)
+      - uio2 = HDMI Hotplug Detect (41200000, 1 bit)
+      - uio3 = Ethernet Reset (41230000, 1 bit)
 
 해결:
   1. UIO 디바이스 확인:
