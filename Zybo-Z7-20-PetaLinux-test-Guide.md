@@ -1897,9 +1897,9 @@ scp hw_test.py petalinux@<BOARD_IP>:/home/petalinux/
  * PL GPIO access via UIO (uio_pdrv_genirq driver).
  *
  * UIO mapping (verified):
- *   uio0 -> gpio@41220000 -> Buttons (4 inputs)
+ *   uio0 -> gpio@41220000 -> LEDs (4 outputs)
  *   uio1 -> gpio@41210000 -> Switches (2 inputs)
- *   uio2 -> gpio@41200000 -> LEDs (4 outputs)
+ *   uio2 -> gpio@41200000 -> Buttons (4 inputs)
  *
  * AXI GPIO register map:
  *   Offset 0x00 : GPIO_DATA  (read/write pin values)
@@ -1926,9 +1926,9 @@ scp hw_test.py petalinux@<BOARD_IP>:/home/petalinux/
 #define MAP_SIZE         0x10000
 
 /* UIO device addresses (from /sys/class/uio/uioN/maps/map0/addr) */
-#define UIO_ADDR_LEDS    0x41200000
+#define UIO_ADDR_LEDS    0x41220000
 #define UIO_ADDR_SWITCH  0x41210000
-#define UIO_ADDR_BUTTON  0x41220000
+#define UIO_ADDR_BUTTON  0x41200000
 
 struct uio_gpio {
     int   fd;
@@ -2009,11 +2009,11 @@ void test_leds(void)
     printf("\n[TEST 1] LED Test\n");
 
     struct uio_gpio led;
-    if (uio_open(&led, "/dev/uio2") < 0) {
-        printf("  [FAIL] Cannot open /dev/uio2 (LED)\n");
+    if (uio_open(&led, "/dev/uio0") < 0) {
+        printf("  [FAIL] Cannot open /dev/uio0 (LED)\n");
         return;
     }
-    printf("  [OK]   LED UIO opened (/dev/uio2, 0x41200000)\n");
+    printf("  [OK]   LED UIO opened (/dev/uio0, 0x41220000)\n");
 
     /* All 4 pins as output */
     for (int i = 0; i < 4; i++)
@@ -2099,11 +2099,11 @@ void test_buttons(void)
     printf("\n[TEST 3] Button Test\n");
 
     struct uio_gpio btn;
-    if (uio_open(&btn, "/dev/uio0") < 0) {
-        printf("  [FAIL] Cannot open /dev/uio0 (Button)\n");
+    if (uio_open(&btn, "/dev/uio2") < 0) {
+        printf("  [FAIL] Cannot open /dev/uio2 (Button)\n");
         return;
     }
-    printf("  [OK]   Button UIO opened (/dev/uio0, 0x41220000)\n");
+    printf("  [OK]   Button UIO opened (/dev/uio2, 0x41200000)\n");
 
     /* All pins as input */
     for (int i = 0; i < 4; i++)
@@ -2284,9 +2284,9 @@ Requires: Python 3
 PL GPIO access via UIO (uio_pdrv_genirq driver).
 
 UIO mapping (verified):
-  uio0 -> gpio@41220000 -> Buttons (4 inputs)
+  uio0 -> gpio@41220000 -> LEDs (4 outputs)
   uio1 -> gpio@41210000 -> Switches (2 inputs)
-  uio2 -> gpio@41200000 -> LEDs (4 outputs)
+  uio2 -> gpio@41200000 -> Buttons (4 inputs)
 
 AXI GPIO register map:
   Offset 0x00 : GPIO_DATA  (read/write pin values)
@@ -2333,9 +2333,9 @@ GPIO_DATA_OFFSET = 0x00
 GPIO_TRI_OFFSET  = 0x04
 
 UIO_DEVS = {
-    "led":    "/dev/uio2",
+    "led":    "/dev/uio0",
     "switch": "/dev/uio1",
-    "button": "/dev/uio0",
+    "button": "/dev/uio2",
 }
 
 
