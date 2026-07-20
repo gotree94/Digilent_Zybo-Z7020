@@ -1446,7 +1446,8 @@ sudo usermod -aG vboxsf gotree94
 ```bash
 cd ~/Downloads
 chmod +x petalinux-v2022.1-final-installer.run
-./petalinux-v2022.1-final-installer.run /opt/pkg/petalinux
+sudo apt-get install -y xterm
+./petalinux-v2022.1-04191534-installer.run --dir /opt/pkg/petalinux
 ```
 
 > 설치 중 라이센스 동의 화면에서 `y`를 눌러 진행
