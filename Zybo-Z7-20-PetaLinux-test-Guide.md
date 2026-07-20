@@ -1434,6 +1434,10 @@ sudo chown -R $USER:$USER /opt/pkg/
 
 ### 10.2 PetaLinux 2022.1 다운로드
 
+```
+sudo usermod -aG vboxsf gotree94
+```
+
 1. [AMD/Xilinx 웹사이트](https://www.xilinx.com/support/download/index.html/content/xilinx/en/downloadNav/embedded-design-tools.html)에서:
    - **PetaLinux 2022.1** 설치 파일 다운로드
    - 파일명 예: `petalinux-v2022.1-final-installer.run`
