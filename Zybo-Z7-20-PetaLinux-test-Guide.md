@@ -1324,7 +1324,12 @@ top
 12. [부팅 이미지 생성 및 SD카드](#12-부팅-이미지-생성-및-sd카드)
     - [12.0 빌드 결과 확인](#120-빌드-결과-확인)
     - [12.5 Windows에서 SD카드 굽기 (balenaEtcher)](#125-windows에서-sd카드-굽기-balenetcher)
-13. [보드 동작 테스트 (Python) - 최신 버전](#13-보드-동작-테스트-python---최신-버전)
+13. [보드 동작 테스트 (C/Python)](#13-보드-동작-테스트)
+    - [13.1 테스트 환경 준비](#131-테스트-환경-준비)
+    - [13.2 테스트 파일 전송 방법](#132-테스트-파일-전송-방법)
+    - [13.3 C 하드웨어 테스트 코드 (추천)](#133-c-하드웨어-테스트-코드-추천)
+    - [13.4 Python 테스트 코드](#134-python-테스트-코드)
+    - [13.5 개별 테스트 실행](#135-개별-테스트-실행)
 14. [문제 해결 - 최신 버전](#14-문제-해결---최신-버전)
 
 ---
@@ -1810,58 +1815,523 @@ SD카드 (FAT32 파티션)
 
 ---
 
-## 13. 보드 동작 테스트 (Python) - 최신 버전
+## 13. 보드 동작 테스트
 
 ### 13.1 테스트 환경 준비
 
-부팅 후 시리얼 콘솔 또는 SSH에서:
+#### Python 설치 (이미지에 포함되지 않은 경우)
 
 ```bash
-# Python 3 확인 (2022.1 이미지에 포함)
+# SD rootfs 모드에서만 가능 (initramfs는 재부팅 시 사라짐)
+opkg update
+opkg install python3 python3-core
+
+# Python 확인
 python3 --version
-
-# pip가 없을 경우
-python3 -m ensurepip 2>/dev/null || true
-
-# pyserial 설치 (UART 테스트용)
-pip3 install pyserial 2>/dev/null || true
 ```
 
-### 13.2 테스트 스크립트 파일 전송
+> **initramfs 모드**에서는 패키지 설치가 재부팅 후 사라집니다.
+> C 테스트 코드를 사용하면 Python 없이도 테스트 가능합니다.
+
+#### C 컴파일러 확인
 
 ```bash
-# SCP 사용 (이더넷 연결 시)
-scp hardware_test.py root@<BOARD_IP>:/home/root/
+# gcc가 이미지에 포함되어 있는지 확인
+gcc --version
 
-# 또는 직접 붙여넣기
-cat > /home/root/hardware_test.py << 'EOF'
-# (아래 스크립트 내용)
+# 없을 경우 (SD rootfs 모드)
+opkg update
+opkg install gcc
+```
+
+> PetaLinux 이미지에는 일반적으로 `gcc`가 포함되어 있지 않습니다.
+> **C 테스트 코드를 사용하는 것이 가장 안정적입니다.**
+
+### 13.2 테스트 파일 전송 방법
+
+#### 방법 A: 시리얼 콘솔에서 직접 붙여넣기
+
+시리얼 콘솔(picocom/minicom)에서 복사한 후, 보드에서 `cat`으로 파일 생성:
+
+```bash
+# cat으로 파일 작성 후 Ctrl+D로 종료
+cat > /home/petalinux/hw_test.c << 'EOF'
+(아래 C 코드 내용)
 EOF
 ```
 
-### 13.3 최신 버전 호환 테스트 스크립트
+#### 방법 B: SD카드에 넣기
 
-> 2022.1 커널에서의 변경사항 반영:
-> - Python 3 전용
-> - sysfs GPIO 경로 변경 대응
-> - V4L2 디바이스 이름 변경 대응
+호스트 PC에서 SD카드의 FAT32 파티션에 테스트 파일 복사 후 보드에서 마운트:
+
+```bash
+# 보드에서 SD카드 마운트
+mkdir -p /mnt/sd
+mount /dev/mmcblk0p1 /mnt/sd
+cp /mnt/sd/hw_test.c /home/petalinux/
+cp /mnt/sd/hw_test.py /home/petalinux/
+umount /mnt/sd
+```
+
+#### 방법 C: SCP (이더넷 연결 시)
+
+```bash
+# 호스트 PC에서
+scp hw_test.c petalinux@<BOARD_IP>:/home/petalinux/
+scp hw_test.py petalinux@<BOARD_IP>:/home/petalinux/
+```
+
+### 13.3 C 하드웨어 테스트 코드 (추천)
+
+> Python 없이도 동작하는 C 테스트 프로그램
+> 한글 코멘트 깨짐 방지를 위해 영어로 작성
+
+```c
+/*
+ * hw_test.c - Zybo Z7-20 Hardware Test Program
+ *
+ * Compile: gcc -o hw_test hw_test.c
+ * Run:     ./hw_test
+ *
+ * Tests: LED, Switch, Button, Network, Memory, System Info
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <time.h>
+
+/* -------------------------------------------------- */
+/* GPIO utility functions                             */
+/* -------------------------------------------------- */
+
+int export_gpio(int gpio)
+{
+    int fd = open("/sys/class/gpio/export", O_WRONLY);
+    if (fd < 0) return -1;
+    char buf[16];
+    int len = snprintf(buf, sizeof(buf), "%d", gpio);
+    write(fd, buf, len);
+    close(fd);
+    usleep(100000); /* 100ms delay */
+    return 0;
+}
+
+int unexport_gpio(int gpio)
+{
+    int fd = open("/sys/class/gpio/unexport", O_WRONLY);
+    if (fd < 0) return -1;
+    char buf[16];
+    int len = snprintf(buf, sizeof(buf), "%d", gpio);
+    write(fd, buf, len);
+    close(fd);
+    return 0;
+}
+
+int set_gpio_direction(int gpio, const char *direction)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/direction", gpio);
+    int fd = open(path, O_WRONLY);
+    if (fd < 0) return -1;
+    write(fd, direction, strlen(direction));
+    close(fd);
+    return 0;
+}
+
+int set_gpio_value(int gpio, int value)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", gpio);
+    int fd = open(path, O_WRONLY);
+    if (fd < 0) return -1;
+    char buf[4];
+    int len = snprintf(buf, sizeof(buf), "%d", value);
+    write(fd, buf, len);
+    close(fd);
+    return 0;
+}
+
+int get_gpio_value(int gpio)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", gpio);
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return -1;
+    char buf[4] = {0};
+    read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    return atoi(buf);
+}
+
+int get_gpio_base(const char *keyword)
+{
+    DIR *dir = opendir("/sys/class/gpio");
+    if (!dir) return -1;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strncmp(entry->d_name, "gpiochip", 8) != 0)
+            continue;
+
+        char label_path[128];
+        snprintf(label_path, sizeof(label_path),
+                 "/sys/class/gpio/%s/label", entry->d_name);
+
+        FILE *fp = fopen(label_path, "r");
+        if (!fp) continue;
+
+        char label[64] = {0};
+        fgets(label, sizeof(label), fp);
+        fclose(fp);
+
+        /* Convert to lowercase for comparison */
+        for (int i = 0; label[i]; i++) {
+            if (label[i] >= 'A' && label[i] <= 'Z')
+                label[i] += 32;
+        }
+
+        if (strstr(label, keyword)) {
+            char base_path[128];
+            snprintf(base_path, sizeof(base_path),
+                     "/sys/class/gpio/%s/base", entry->d_name);
+            FILE *bp = fopen(base_path, "r");
+            if (!bp) continue;
+            int base = 0;
+            fscanf(bp, "%d", &base);
+            fclose(bp);
+            closedir(dir);
+            return base;
+        }
+    }
+    closedir(dir);
+    return -1;
+}
+
+/* -------------------------------------------------- */
+/* Test: LED                                          */
+/* -------------------------------------------------- */
+
+void test_leds(void)
+{
+    printf("\n[TEST 1] LED Test\n");
+
+    int base = get_gpio_base("led");
+    if (base < 0) {
+        printf("  [FAIL] LED GPIO chip not found\n");
+        return;
+    }
+    printf("  [OK]   LED GPIO base: %d\n", base);
+
+    int led_pins[] = {0, 1, 2, 3}; /* LD4 ~ LD7 */
+    int num_leds = 4;
+
+    for (int i = 0; i < num_leds; i++) {
+        int gpio = base + led_pins[i];
+        export_gpio(gpio);
+        set_gpio_direction(gpio, "out");
+
+        /* Turn ON */
+        set_gpio_value(gpio, 1);
+        usleep(300000); /* 300ms */
+
+        int val = get_gpio_value(gpio);
+
+        /* Turn OFF */
+        set_gpio_value(gpio, 0);
+        unexport_gpio(gpio);
+
+        printf("  [%s] LED %d (GPIO %d): read=%d\n",
+               (val == 1) ? "OK " : "FAIL", i, gpio, val);
+    }
+
+    /* Chase pattern */
+    printf("\n[TEST 1b] LED Chase Pattern\n");
+    int gpios[4];
+    for (int i = 0; i < 4; i++) {
+        gpios[i] = base + i;
+        export_gpio(gpios[i]);
+        set_gpio_direction(gpios[i], "out");
+    }
+
+    for (int round = 0; round < 3; round++) {
+        for (int i = 0; i < 4; i++) {
+            set_gpio_value(gpios[i], 1);
+            usleep(100000); /* 100ms */
+            set_gpio_value(gpios[i], 0);
+        }
+    }
+
+    for (int i = 0; i < 4; i++)
+        unexport_gpio(gpios[i]);
+
+    printf("  [OK]   Chase pattern completed\n");
+}
+
+/* -------------------------------------------------- */
+/* Test: Switch                                       */
+/* -------------------------------------------------- */
+
+void test_switches(void)
+{
+    printf("\n[TEST 2] Switch Test\n");
+
+    int base = get_gpio_base("switch");
+    if (base < 0) {
+        printf("  [FAIL] Switch GPIO chip not found\n");
+        return;
+    }
+    printf("  [OK]   Switch GPIO base: %d\n", base);
+
+    for (int i = 0; i < 2; i++) {
+        int gpio = base + i;
+        export_gpio(gpio);
+        set_gpio_direction(gpio, "in");
+
+        int val = get_gpio_value(gpio);
+        unexport_gpio(gpio);
+
+        printf("  [OK]   SW%d (GPIO %d): %d\n", i, gpio, val);
+    }
+
+    /* Polling test */
+    printf("\n[TEST 2b] Switch Polling (5s)\n");
+    int gpio = base;
+    export_gpio(gpio);
+    set_gpio_direction(gpio, "in");
+
+    int initial = get_gpio_value(gpio);
+    printf("  Initial value: %d, toggle switch within 5s...\n", initial);
+
+    time_t start = time(NULL);
+    int changed = 0;
+    int current = initial;
+    while (time(NULL) - start < 5) {
+        current = get_gpio_value(gpio);
+        if (current != initial) {
+            changed = 1;
+            break;
+        }
+        usleep(50000); /* 50ms */
+    }
+    unexport_gpio(gpio);
+
+    if (changed)
+        printf("  [OK]   Switch changed: %d -> %d\n", initial, current);
+    else
+        printf("  [OK]   No change (timeout), value=%d\n", initial);
+}
+
+/* -------------------------------------------------- */
+/* Test: Button                                       */
+/* -------------------------------------------------- */
+
+void test_buttons(void)
+{
+    printf("\n[TEST 3] Button Test\n");
+
+    int base = get_gpio_base("button");
+    if (base < 0) {
+        printf("  [FAIL] Button GPIO chip not found\n");
+        return;
+    }
+    printf("  [OK]   Button GPIO base: %d\n", base);
+
+    for (int i = 0; i < 3; i++) {
+        int gpio = base + i;
+        export_gpio(gpio);
+        set_gpio_direction(gpio, "in");
+
+        int val = get_gpio_value(gpio);
+        unexport_gpio(gpio);
+
+        printf("  [OK]   BTN%d (GPIO %d): %d\n", i, gpio, val);
+    }
+}
+
+/* -------------------------------------------------- */
+/* Test: Network                                      */
+/* -------------------------------------------------- */
+
+void test_network(void)
+{
+    printf("\n[TEST 5] Network Test\n");
+
+    /* Check eth0 exists */
+    int ret = system("ip addr show eth0 > /dev/null 2>&1");
+    if (ret != 0) {
+        printf("  [FAIL] eth0 not found\n");
+        return;
+    }
+    printf("  [OK]   eth0 interface found\n");
+
+    /* DHCP */
+    ret = system("dhclient -v eth0 > /dev/null 2>&1");
+    if (ret == 0)
+        printf("  [OK]   DHCP completed\n");
+    else
+        printf("  [WARN] DHCP failed (may already have IP)\n");
+
+    /* Get IP */
+    FILE *fp = popen("hostname -I", "r");
+    if (fp) {
+        char ip[64] = {0};
+        fgets(ip, sizeof(ip), fp);
+        pclose(fp);
+        if (strlen(ip) > 0)
+            printf("  [OK]   IP: %s", ip);
+        else
+            printf("  [FAIL] No IP assigned\n");
+    }
+
+    /* Ping test */
+    ret = system("ping -c 3 -W 2 8.8.8.8 > /dev/null 2>&1");
+    printf("  [%s] Ping 8.8.8.8\n", (ret == 0) ? "OK " : "FAIL");
+}
+
+/* -------------------------------------------------- */
+/* Test: Memory                                       */
+/* -------------------------------------------------- */
+
+void test_memory(void)
+{
+    printf("\n[TEST 9] Memory/System Test\n");
+
+    /* Memory */
+    FILE *fp = fopen("/proc/meminfo", "r");
+    if (fp) {
+        char line[256];
+        while (fgets(line, sizeof(line), fp)) {
+            if (strstr(line, "MemTotal")) {
+                printf("  [OK]   %s", line);
+                break;
+            }
+        }
+        fclose(fp);
+    }
+
+    /* CPU info */
+    fp = fopen("/proc/cpuinfo", "r");
+    if (fp) {
+        char line[256];
+        while (fgets(line, sizeof(line), fp)) {
+            if (strstr(line, "Hardware") || strstr(line, "model name")) {
+                printf("  [OK]   %s", line);
+                break;
+            }
+        }
+        fclose(fp);
+    }
+
+    /* Kernel version */
+    fp = popen("uname -a", "r");
+    if (fp) {
+        char line[256];
+        if (fgets(line, sizeof(line), fp))
+            printf("  [OK]   %s", line);
+        pclose(fp);
+    }
+}
+
+/* -------------------------------------------------- */
+/* Test: HDMI (DRM check)                             */
+/* -------------------------------------------------- */
+
+void test_hdmi(void)
+{
+    printf("\n[TEST 6] HDMI Output Test\n");
+
+    /* Check /dev/fb0 */
+    if (access("/dev/fb0", F_OK) == 0) {
+        printf("  [OK]   /dev/fb0 found\n");
+    } else {
+        printf("  [WARN] /dev/fb0 not found, checking DRM...\n");
+        DIR *dir = opendir("/sys/class/drm");
+        if (dir) {
+            struct dirent *entry;
+            int found = 0;
+            while ((entry = readdir(dir)) != NULL) {
+                if (strstr(entry->d_name, "HDMI") ||
+                    strstr(entry->d_name, "card")) {
+                    printf("  [OK]   DRM: %s\n", entry->d_name);
+                    found = 1;
+                }
+            }
+            closedir(dir);
+            if (!found)
+                printf("  [FAIL] No HDMI DRM connector\n");
+        }
+    }
+}
+
+/* -------------------------------------------------- */
+/* Main                                               */
+/* -------------------------------------------------- */
+
+int main(void)
+{
+    printf("==============================================\n");
+    printf("  Zybo Z7-20 Hardware Test (C version)\n");
+    printf("==============================================\n");
+
+    test_memory();
+    test_leds();
+    test_switches();
+    test_buttons();
+    test_network();
+    test_hdmi();
+
+    printf("\n==============================================\n");
+    printf("  All tests completed\n");
+    printf("==============================================\n");
+
+    return 0;
+}
+```
+
+#### C 코드 컴파일 및 실행
+
+```bash
+gcc -o hw_test hw_test.c
+./hw_test
+```
+
+#### 빠른 개별 테스트
+
+```bash
+# LED만 테스트
+gcc -o led_test hw_test.c && ./led_test
+
+# 네트워크만 빠르게 확인
+ping -c 3 8.8.8.8
+
+# 시스템 정보만
+uname -a && cat /proc/meminfo | head -5
+```
+
+### 13.4 Python 테스트 코드
+
+> Python이 설치된 경우에만 사용 가능
+> 한글 코멘트 깨짐 방지를 위해 영어로 작성
 
 ```python
 #!/usr/bin/env python3
 """
-Zybo Z7-20 하드웨어 종합 테스트 스크립트 (PetaLinux 2022.1 호환)
-테스트 대상: LED, 스위치, 버튼, 이더넷, UART, HDMI 출력, HDMI 입력, Pcam
+hw_test.py - Zybo Z7-20 Hardware Test (Python version)
+Requires: Python 3
+
+Tests: LED, Switch, Button, Network, Memory, HDMI, System Info
 """
 
 import os
 import sys
 import time
 import subprocess
-import json
 from datetime import datetime
 
-
-# ─── 테스트 결과 관리 ─────────────────────────────────────────────
 
 class TestResult:
     def __init__(self):
@@ -1869,11 +2339,7 @@ class TestResult:
 
     def add(self, name, passed, detail=""):
         status = "PASS" if passed else "FAIL"
-        self.results.append({
-            "name": name,
-            "status": status,
-            "detail": detail
-        })
+        self.results.append({"name": name, "status": status, "detail": detail})
         symbol = "[OK]" if passed else "[FAIL]"
         print(f"  {symbol} {name}" + (f" - {detail}" if detail else ""))
 
@@ -1882,553 +2348,17 @@ class TestResult:
         passed = sum(1 for r in self.results if r["status"] == "PASS")
         failed = total - passed
         print("\n" + "=" * 60)
-        print(f"  테스트 결과 요약: {passed}/{total} 통과, {failed} 실패")
+        print(f"  Results: {passed}/{total} passed, {failed} failed")
         print("=" * 60)
         return failed == 0
 
 
-# ─── 1. LED 테스트 ────────────────────────────────────────────────
+# --- GPIO Utility Functions ---
 
-def test_leds(result):
-    """
-    Zybo Z7-20: 4개 RGB LED (LD4~LD7)
-    UIO 드라이버 또는 sysfs GPIO로 제어
-    """
-    print("\n[테스트 1] LED 테스트")
-
-    # 방법 1: gpiochip label 방식
-    gpio_base = find_gpio_chip_by_label("led")
-    if gpio_base is not None:
-        result.add("LED - GPIO 칩 (label)", True, gpio_base)
-        pins = [0, 1, 2, 3]
-        for pin in pins:
-            gpio_num = get_gpio_number(gpio_base, pin)
-            if gpio_num is None:
-                result.add(f"LED {pin} - GPIO 번호 실패", False)
-                continue
-            try:
-                export_gpio(gpio_num)
-                set_gpio_direction(gpio_num, "out")
-                set_gpio_value(gpio_num, 1)
-                time.sleep(0.5)
-                val = get_gpio_value(gpio_num)
-                set_gpio_value(gpio_num, 0)
-                passed = (val == "1")
-                result.add(f"LED {pin} 점등", passed, f"값: {val}")
-                unexport_gpio(gpio_num)
-            except Exception as e:
-                result.add(f"LED {pin} 테스트", False, str(e))
-        return
-
-    # 방법 2: 직접 GPIO 번호 사용 (디바이스 트리에서 확인)
-    print("  GPIO 칩 label 미발견, 직접 번호로 시도...")
-    try:
-        gpio_nums = discover_gpio_by_direction("out")
-        if gpio_nums:
-            result.add("LED - GPIO 출력 핀 탐색", True, f"{len(gpio_nums)}개 출력 핀 발견")
-            for i, gpio_num in enumerate(gpio_nums[:4]):
-                try:
-                    export_gpio(gpio_num)
-                    set_gpio_direction(gpio_num, "out")
-                    set_gpio_value(gpio_num, 1)
-                    time.sleep(0.3)
-                    val = get_gpio_value(gpio_num)
-                    set_gpio_value(gpio_num, 0)
-                    result.add(f"LED GPIO{gpio_num} 점등", val == "1")
-                    unexport_gpio(gpio_num)
-                except Exception as e:
-                    result.add(f"LED GPIO{gpio_num} 테스트", False, str(e))
-        else:
-            result.add("LED - GPIO 출력 핀 없음", False)
-    except Exception as e:
-        result.add("LED 테스트 전체", False, str(e))
-
-
-def test_led_chase(result):
-    """LED chase 패턴 테스트"""
-    print("\n[테스트 1b] LED chase 패턴")
-
-    gpio_base = find_gpio_chip_by_label("led")
-    if gpio_base is None:
-        result.add("LED chase - GPIO 없음", False)
-        return
-
-    pins = []
-    for i in range(4):
-        gpio_num = get_gpio_number(gpio_base, i)
-        if gpio_num:
-            export_gpio(gpio_num)
-            set_gpio_direction(gpio_num, "out")
-            pins.append(gpio_num)
-
-    if len(pins) != 4:
-        result.add("LED chase - 핀 초기화 실패", False, f"{len(pins)}/4")
-        for p in pins:
-            unexport_gpio(p)
-        return
-
-    try:
-        for _ in range(3):
-            for p in pins:
-                set_gpio_value(p, 1)
-                time.sleep(0.1)
-                set_gpio_value(p, 0)
-        result.add("LED chase 패턴", True)
-    except Exception as e:
-        result.add("LED chase 패턴", False, str(e))
-    finally:
-        for p in pins:
-            set_gpio_value(p, 0)
-            unexport_gpio(p)
-
-
-# ─── 2. 스위치 테스트 ──────────────────────────────────────────────
-
-def test_switches(result):
-    """
-    Zybo Z7-20: 2개 slide 스위치 (SW0~SW1)
-    """
-    print("\n[테스트 2] 스위치 테스트")
-
-    gpio_base = find_gpio_chip_by_label("switch")
-    if gpio_base is None:
-        result.add("스위치 - GPIO 칩 검색", False, "스위치 GPIO 없음")
-        return
-
-    result.add("스위치 - GPIO 칩 검색", True, gpio_base)
-
-    for pin in [0, 1]:
-        gpio_num = get_gpio_number(gpio_base, pin)
-        if gpio_num is None:
-            result.add(f"스위치 {pin} - GPIO 번호 실패", False)
-            continue
-        try:
-            export_gpio(gpio_num)
-            set_gpio_direction(gpio_num, "in")
-            val = get_gpio_value(gpio_num)
-            result.add(f"스위치 {pin} 읽기", True, f"값: {val}")
-            unexport_gpio(gpio_num)
-        except Exception as e:
-            result.add(f"스위치 {pin} 읽기", False, str(e))
-
-
-def test_switch_interrupt(result):
-    """스위치 변화 인터럽트 테스트 (5초 polling)"""
-    print("\n[테스트 2b] 스위치 변화 감지 (5초 대기)")
-
-    gpio_base = find_gpio_chip_by_label("switch")
-    if gpio_base is None:
-        result.add("스위치 변화감지 - GPIO 없음", False)
-        return
-
-    gpio_num = get_gpio_number(gpio_base, 0)
-    if gpio_num is None:
-        result.add("스위치 변화감지 - GPIO 번호 실패", False)
-        return
-
-    try:
-        export_gpio(gpio_num)
-        set_gpio_direction(gpio_num, "in")
-
-        gpio_fd = open(f"/sys/class/gpio/gpio{gpio_num}/value", "r")
-        initial_val = gpio_fd.read().strip()
-        gpio_fd.seek(0)
-
-        print("  >> 스위치를 5초 내로 조작하세요...")
-        changed = False
-        start = time.time()
-        while time.time() - start < 5:
-            gpio_fd.seek(0)
-            current = gpio_fd.read().strip()
-            if current != initial_val:
-                changed = True
-                break
-            time.sleep(0.05)
-
-        gpio_fd.close()
-        unexport_gpio(gpio_num)
-
-        if changed:
-            result.add("스위치 변화 감지", True, f"{initial_val} -> {current}")
-        else:
-            result.add("스위치 변화 감지", True, f"변화 없음 (값: {initial_val}, 5초 타임아웃)")
-
-    except Exception as e:
-        result.add("스위치 변화 감지", False, str(e))
-
-
-# ─── 3. 버튼 테스트 ────────────────────────────────────────────────
-
-def test_buttons(result):
-    """
-    Zybo Z7-20: 3개 push 버튼 (BTN0~BTN2)
-    """
-    print("\n[테스트 3] 버튼 테스트")
-
-    gpio_base = find_gpio_chip_by_label("button")
-    if gpio_base is None:
-        result.add("버튼 - GPIO 칩 검색", False, "버튼 GPIO 없음")
-        return
-
-    result.add("버튼 - GPIO 칩 검색", True, gpio_base)
-
-    for pin in [0, 1, 2]:
-        gpio_num = get_gpio_number(gpio_base, pin)
-        if gpio_num is None:
-            result.add(f"버튼 {pin} - GPIO 번호 실패", False)
-            continue
-        try:
-            export_gpio(gpio_num)
-            set_gpio_direction(gpio_num, "in")
-            val = get_gpio_value(gpio_num)
-            result.add(f"버튼 {pin} 읽기", True, f"값: {val} (기본 0 권장)")
-            unexport_gpio(gpio_num)
-        except Exception as e:
-            result.add(f"버튼 {pin} 읽기", False, str(e))
-
-
-# ─── 4. UART 루프백 테스트 ─────────────────────────────────────────
-
-def test_uart_loopback(result):
-    """
-    UART 루프백 테스트 (TX ↔ RX 직접 연결 필요)
-    """
-    print("\n[테스트 4] UART 루프백 테스트")
-
-    uart_port = None
-    # PS UART (ttyPS0)는 콘솔로 사용 중 → ttyPS1 또는 USB-UART 탐색
-    candidates = ["/dev/ttyPS1", "/dev/ttyUSB0", "/dev/ttyS0"]
-    for p in candidates:
-        if os.path.exists(p):
-            uart_port = p
-            break
-
-    if uart_port is None:
-        result.add("UART - 사용 가능한 포트 없음", False)
-        return
-
-    result.add("UART - 포트 검색", True, uart_port)
-
-    try:
-        import serial
-        ser = serial.Serial(uart_port, 115200, timeout=2)
-        test_data = b"ZyboUART2022"
-        ser.write(test_data)
-        time.sleep(0.1)
-        received = ser.read(ser.in_waiting or len(test_data))
-        ser.close()
-
-        passed = (received == test_data)
-        result.add("UART 루프백", passed, f"송신: {test_data}, 수신: {received}")
-
-    except ImportError:
-        try:
-            subprocess.run(["stty", "-F", uart_port, "115200", "raw"], check=True)
-            with open(uart_port, "r+b", buffering=0) as f:
-                test_data = b"ZyboUART2022"
-                f.write(test_data)
-                time.sleep(0.2)
-                received = f.read(32)
-            passed = (received == test_data)
-            result.add("UART 루프백 (stty)", passed,
-                       f"송신: {test_data}, 수신: {received}")
-        except Exception as e:
-            result.add("UART 루프백", False, str(e))
-
-    except Exception as e:
-        result.add("UART 루프백", False, str(e))
-
-
-# ─── 5. 네트워크 테스트 ────────────────────────────────────────────
-
-def test_network(result):
-    """이더넷 연결 및 DHCP 테스트"""
-    print("\n[테스트 5] 네트워크 테스트")
-
-    try:
-        ip_output = subprocess.check_output(
-            ["ip", "addr", "show"], stderr=subprocess.STDOUT
-        ).decode()
-
-        if "eth0" in ip_output:
-            result.add("네트워크 - eth0 인터페이스", True)
-        elif "eth" in ip_output or "enp" in ip_output:
-            result.add("네트워크 - 이더넷 인터페이스", True)
-        else:
-            result.add("네트워크 - 이더넷 인터페이스", False, "eth0 없음")
-            return
-    except Exception as e:
-        result.add("네트워크 - 인터페이스 검색", False, str(e))
-        return
-
-    try:
-        subprocess.run(["dhclient", "-v", "eth0"],
-                       timeout=15, capture_output=True, check=True)
-        result.add("네트워크 - DHCP", True)
-    except Exception as e:
-        result.add("네트워크 - DHCP", False, str(e))
-
-    try:
-        ip_output = subprocess.check_output(
-            ["hostname", "-I"], stderr=subprocess.STDOUT
-        ).decode().strip()
-        if ip_output:
-            result.add("네트워크 - IP 할당", True, ip_output)
-        else:
-            result.add("네트워크 - IP 할당", False, "IP 없음")
-    except Exception as e:
-        result.add("네트워크 - IP 할당", False, str(e))
-
-    try:
-        ping_result = subprocess.run(
-            ["ping", "-c", "3", "-W", "2", "8.8.8.8"],
-            capture_output=True, timeout=10
-        )
-        passed = ping_result.returncode == 0
-        result.add("네트워크 - Ping 8.8.8.8", passed,
-                   "외부 인터넷 연결" if passed else "외부 연결 실패")
-    except Exception as e:
-        result.add("네트워크 - Ping", False, str(e))
-
-    try:
-        nslookup = subprocess.run(
-            ["nslookup", "google.com"],
-            capture_output=True, timeout=5
-        )
-        result.add("네트워크 - DNS 조회", nslookup.returncode == 0)
-    except Exception as e:
-        result.add("네트워크 - DNS 조회", False, str(e))
-
-
-# ─── 6. HDMI 출력 테스트 ──────────────────────────────────────────
-
-def test_hdmi_output(result):
-    """HDMI 출력 프레임버퍼 테스트"""
-    print("\n[테스트 6] HDMI 출력 테스트")
-
-    fb_path = "/dev/fb0"
-    if not os.path.exists(fb_path):
-        # 2022.1: DRM 기반일 수 있음
-        drm_path = "/sys/class/drm"
-        if os.path.exists(drm_path):
-            connectors = [d for d in os.listdir(drm_path) if "HDMI" in d or "card" in d]
-            if connectors:
-                result.add("HDMI 출력 - DRM 커넥터", True, ", ".join(connectors))
-            else:
-                result.add("HDMI 출력 - 프레임버퍼/DRM 없음", False, "/dev/fb0 및 HDMI DRM 없음")
-        else:
-            result.add("HDMI 출력 - 프레임버퍼 없음", False, "/dev/fb0 없음")
-        return
-
-    try:
-        fb_info = subprocess.check_output(
-            ["cat", "/sys/class/graphics/fb0/virtual_size"],
-            stderr=subprocess.STDOUT
-        ).decode().strip()
-        result.add("HDMI 출력 - 프레임버퍼 크기", True, fb_info)
-    except Exception as e:
-        result.add("HDMI 출력 - 프레임버퍼 정보", False, str(e))
-
-    try:
-        test_cmd = """
-try:
-    with open('/dev/fb0', 'rb+') as fb:
-        w, h = 1280, 720
-        red = b'\\x00\\x00\\xff\\xff' * w
-        for y in range(h):
-            fb.seek(y * w * 4)
-            fb.write(red)
-    print('OK')
-except Exception as e:
-    print(f'ERROR: {e}')
-"""
-        proc = subprocess.run(
-            ["python3", "-c", test_cmd],
-            capture_output=True, timeout=5, text=True
-        )
-        output = proc.stdout.strip()
-        result.add("HDMI 출력 - 빨간색 테스트 패턴", "OK" in output, output)
-
-    except Exception as e:
-        result.add("HDMI 출력 - 테스트 패턴", False, str(e))
-
-
-# ─── 7. HDMI 입력 테스트 ──────────────────────────────────────────
-
-def test_hdmi_input(result):
-    """HDMI 입력 (video4linux) 테스트"""
-    print("\n[테스트 7] HDMI 입력 테스트")
-
-    video_dev = "/dev/video0"
-    if not os.path.exists(video_dev):
-        result.add("HDMI 입력 - /dev/video0", False, "장치 없음")
-        return
-
-    try:
-        v4l2 = subprocess.check_output(
-            ["v4l2-ctl", "--list-devices"],
-            stderr=subprocess.STDOUT
-        ).decode()
-        result.add("HDMI 입력 - V4L2 디바이스", True)
-        print(f"    {v4l2.strip().replace(chr(10), chr(10) + '    ')}")
-    except FileNotFoundError:
-        result.add("HDMI 입력 - v4l2-ctl 없음", False)
-    except Exception as e:
-        result.add("HDMI 입력 - V4L2 확인", False, str(e))
-
-    try:
-        capture_cmd = """
-import subprocess
-try:
-    r = subprocess.run(
-        ['v4l2-ctl', '-d', '/dev/video0', '--list-formats-ext'],
-        capture_output=True, timeout=5, text=True
-    )
-    print(r.stdout[:500])
-except Exception as e:
-    print(f'ERROR: {e}')
-"""
-        proc = subprocess.run(
-            ["python3", "-c", capture_cmd],
-            capture_output=True, timeout=10, text=True
-        )
-        output = proc.stdout.strip()
-        has_formats = "Error" not in output and len(output) > 10
-        result.add("HDMI 입력 - 지원 포맷 조회", has_formats, output[:200])
-    except Exception as e:
-        result.add("HDMI 입력 - 포맷 조회", False, str(e))
-
-
-# ─── 8. Pcam 카메라 테스트 ────────────────────────────────────────
-
-def test_pcam(result):
-    """Digilent Pcam 5C 카메라 테스트"""
-    print("\n[테스트 8] Pcam 5C 카메라 테스트")
-
-    media_dev = "/dev/media0"
-    video_dev = "/dev/video0"
-
-    if not os.path.exists(media_dev):
-        result.add("Pcam - /dev/media0", False, "미디어 디바이스 없음")
-        return
-
-    result.add("Pcam - /dev/media0 존재", True)
-
-    try:
-        media_info = subprocess.check_output(
-            ["media-ctl", "-d", "/dev/media0", "-p"],
-            stderr=subprocess.STDOUT, timeout=5
-        ).decode()
-        has_ov5640 = "ov5640" in media_info or "camera" in media_info.lower()
-        result.add("Pcam - MIPI CSI 디바이스", has_ov5640,
-                   "ov5640 감지" if has_ov5640 else "ov5640 미감지")
-    except FileNotFoundError:
-        result.add("Pcam - media-ctl 없음", False)
-    except Exception as e:
-        result.add("Pcam - MIPI CSI 확인", False, str(e))
-
-    if os.path.exists(video_dev):
-        try:
-            capture_cmd = """
-import subprocess, os
-try:
-    r = subprocess.run(
-        ['v4l2-ctl', '-d', '/dev/video0',
-         '--set-fmt-video=width=640,height=480,pixelformat=YUYV',
-         '--stream-mmap', '--stream-count=1', '--stream-to=/tmp/test_frame.raw'],
-        capture_output=True, timeout=10
-    )
-    if os.path.exists('/tmp/test_frame.raw'):
-        size = os.path.getsize('/tmp/test_frame.raw')
-        os.remove('/tmp/test_frame.raw')
-        if size > 0:
-            print(f'SUCCESS:프레임크기={size}')
-        else:
-            print('FAIL:빈프레임')
-    else:
-        print('FAIL:파일미생성')
-except Exception as e:
-    print(f'FAIL:{e}')
-"""
-            proc = subprocess.run(
-                ["python3", "-c", capture_cmd],
-                capture_output=True, timeout=15, text=True
-            )
-            output = proc.stdout.strip()
-            passed = output.startswith("SUCCESS")
-            result.add("Pcam - 프레임 캡처", passed, output)
-        except Exception as e:
-            result.add("Pcam - 프레임 캡처", False, str(e))
-    else:
-        result.add("Pcam - /dev/video0 없음", False)
-
-
-# ─── 9. 파일시스템 및 메모리 테스트 ────────────────────────────────
-
-def test_filesystem(result):
-    """메모리 및 저장장치 테스트"""
-    print("\n[테스트 9] 파일시스템/메모리 테스트")
-
-    try:
-        meminfo = subprocess.check_output(["cat", "/proc/meminfo"],
-                                          stderr=subprocess.STDOUT).decode()
-        for line in meminfo.split("\n"):
-            if "MemTotal" in line:
-                result.add("메모리 총량", True, line.strip())
-                break
-    except Exception as e:
-        result.add("메모리 확인", False, str(e))
-
-    try:
-        mounts = subprocess.check_output(["mount"], stderr=subprocess.STDOUT).decode()
-        if "mmcblk0" in mounts:
-            result.add("SD카드 마운트", True, "mmcblk0 감지됨")
-        else:
-            result.add("SD카드 마운트", True, "initramfs 모드")
-    except Exception as e:
-        result.add("SD카드 마운트 확인", False, str(e))
-
-    try:
-        cpuinfo = subprocess.check_output(["cat", "/proc/cpuinfo"],
-                                          stderr=subprocess.STDOUT).decode()
-        if "Zynq" in cpuinfo or "ARMv7" in cpuinfo or "A9" in cpuinfo:
-            result.add("CPU 정보", True, "Zynq-7000 시리즈 확인")
-        else:
-            first_line = [l for l in cpuinfo.split("\n") if "Hardware" in l]
-            result.add("CPU 정보", True, first_line[0].strip() if first_line else "알 수 없음")
-    except Exception as e:
-        result.add("CPU 정보", False, str(e))
-
-
-# ─── 10. 시스템 정보 ──────────────────────────────────────────────
-
-def test_system_info(result):
-    """시스템 기본 정보 출력"""
-    print("\n[테스트 10] 시스템 정보")
-
-    try:
-        uname = subprocess.check_output(["uname", "-a"],
-                                        stderr=subprocess.STDOUT).decode().strip()
-        result.add("커널 정보", True, uname)
-    except Exception as e:
-        result.add("커널 정보", False, str(e))
-
-    try:
-        uptime = subprocess.check_output(["uptime"],
-                                         stderr=subprocess.STDOUT).decode().strip()
-        result.add("가동 시간", True, uptime)
-    except Exception as e:
-        result.add("가동 시간", False, str(e))
-
-
-# ─── GPIO 유틸리티 함수 ──────────────────────────────────────────
-
-def find_gpio_chip_by_label(keyword):
-    """gpiochip label에서 키워드 검색 (대소문자 무시)"""
+def find_gpio_chip(keyword):
     base_path = "/sys/class/gpio"
     if not os.path.exists(base_path):
         return None
-
     for entry in sorted(os.listdir(base_path)):
         if entry.startswith("gpiochip"):
             label_path = os.path.join(base_path, entry, "label")
@@ -2437,8 +2367,6 @@ def find_gpio_chip_by_label(keyword):
                     label = f.read().strip().lower()
                     if keyword.lower() in label:
                         return os.path.join(base_path, entry)
-
-    # 키워드 미매칭 시 첫 번째 칩 반환
     chips = [e for e in os.listdir(base_path) if e.startswith("gpiochip")]
     if chips:
         return os.path.join(base_path, sorted(chips)[0])
@@ -2446,7 +2374,6 @@ def find_gpio_chip_by_label(keyword):
 
 
 def get_gpio_number(gpiochip_path, pin_offset):
-    """GPIO 칩 base + offset으로 실제 GPIO 번호 계산"""
     try:
         with open(os.path.join(gpiochip_path, "base")) as f:
             base = int(f.read().strip())
@@ -2471,85 +2398,187 @@ def unexport_gpio(gpio_num):
 
 
 def set_gpio_direction(gpio_num, direction):
-    path = f"/sys/class/gpio/gpio{gpio_num}/direction"
-    with open(path, "w") as f:
+    with open(f"/sys/class/gpio/gpio{gpio_num}/direction", "w") as f:
         f.write(direction)
 
 
 def set_gpio_value(gpio_num, value):
-    path = f"/sys/class/gpio/gpio{gpio_num}/value"
-    with open(path, "w") as f:
+    with open(f"/sys/class/gpio/gpio{gpio_num}/value", "w") as f:
         f.write(str(value))
 
 
 def get_gpio_value(gpio_num):
-    path = f"/sys/class/gpio/gpio{gpio_num}/value"
-    with open(path, "r") as f:
+    with open(f"/sys/class/gpio/gpio{gpio_num}/value", "r") as f:
         return f.read().strip()
 
 
-def discover_gpio_by_direction(direction):
-    """지정된 direction을 가진 모든 GPIO 번호 탐색"""
-    gpio_path = "/sys/class/gpio"
-    found = []
-    if not os.path.exists(gpio_path):
-        return found
-    for entry in os.listdir(gpio_path):
-        if entry.startswith("gpio") and entry[4:].isdigit():
-            dir_path = os.path.join(gpio_path, entry, "direction")
-            if os.path.exists(dir_path):
-                with open(dir_path, "r") as f:
-                    if f.read().strip() == direction:
-                        found.append(int(entry[4:]))
-    return sorted(found)
+# --- Test: LED ---
+
+def test_leds(result):
+    print("\n[TEST 1] LED Test")
+    gpio_base = find_gpio_chip("led")
+    if gpio_base is None:
+        result.add("LED - GPIO chip", False, "not found")
+        return
+    result.add("LED - GPIO chip", True, gpio_base)
+
+    for pin in range(4):
+        gpio_num = get_gpio_number(gpio_base, pin)
+        if gpio_num is None:
+            result.add(f"LED {pin}", False, "gpio number failed")
+            continue
+        try:
+            export_gpio(gpio_num)
+            set_gpio_direction(gpio_num, "out")
+            set_gpio_value(gpio_num, 1)
+            time.sleep(0.3)
+            val = get_gpio_value(gpio_num)
+            set_gpio_value(gpio_num, 0)
+            result.add(f"LED {pin} (GPIO {gpio_num})", val == "1", f"val={val}")
+            unexport_gpio(gpio_num)
+        except Exception as e:
+            result.add(f"LED {pin}", False, str(e))
 
 
-# ─── 메인 ──────────────────────────────────────────────────────────
+# --- Test: Switch ---
+
+def test_switches(result):
+    print("\n[TEST 2] Switch Test")
+    gpio_base = find_gpio_chip("switch")
+    if gpio_base is None:
+        result.add("Switch - GPIO chip", False, "not found")
+        return
+    result.add("Switch - GPIO chip", True, gpio_base)
+
+    for pin in range(2):
+        gpio_num = get_gpio_number(gpio_base, pin)
+        if gpio_num is None:
+            continue
+        try:
+            export_gpio(gpio_num)
+            set_gpio_direction(gpio_num, "in")
+            val = get_gpio_value(gpio_num)
+            result.add(f"SW{pin} (GPIO {gpio_num})", True, f"val={val}")
+            unexport_gpio(gpio_num)
+        except Exception as e:
+            result.add(f"SW{pin}", False, str(e))
+
+
+# --- Test: Button ---
+
+def test_buttons(result):
+    print("\n[TEST 3] Button Test")
+    gpio_base = find_gpio_chip("button")
+    if gpio_base is None:
+        result.add("Button - GPIO chip", False, "not found")
+        return
+    result.add("Button - GPIO chip", True, gpio_base)
+
+    for pin in range(3):
+        gpio_num = get_gpio_number(gpio_base, pin)
+        if gpio_num is None:
+            continue
+        try:
+            export_gpio(gpio_num)
+            set_gpio_direction(gpio_num, "in")
+            val = get_gpio_value(gpio_num)
+            result.add(f"BTN{pin} (GPIO {gpio_num})", True, f"val={val}")
+            unexport_gpio(gpio_num)
+        except Exception as e:
+            result.add(f"BTN{pin}", False, str(e))
+
+
+# --- Test: Network ---
+
+def test_network(result):
+    print("\n[TEST 5] Network Test")
+    try:
+        subprocess.run(["dhclient", "-v", "eth0"],
+                       timeout=15, capture_output=True)
+        result.add("DHCP", True)
+    except:
+        result.add("DHCP", False, "failed")
+
+    try:
+        ip = subprocess.check_output(["hostname", "-I"],
+                                     stderr=subprocess.STDOUT).decode().strip()
+        result.add("IP Address", bool(ip), ip)
+    except:
+        result.add("IP Address", False, "no IP")
+
+    try:
+        ret = subprocess.run(["ping", "-c", "3", "8.8.8.8"],
+                             capture_output=True, timeout=10)
+        result.add("Ping 8.8.8.8", ret.returncode == 0)
+    except:
+        result.add("Ping 8.8.8.8", False, "timeout")
+
+
+# --- Test: Memory ---
+
+def test_memory(result):
+    print("\n[TEST 9] Memory/System Test")
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if "MemTotal" in line:
+                    result.add("Memory", True, line.strip())
+                    break
+    except:
+        result.add("Memory", False, "read error")
+
+    try:
+        uname = subprocess.check_output(["uname", "-a"],
+                                        stderr=subprocess.STDOUT).decode().strip()
+        result.add("Kernel", True, uname)
+    except:
+        result.add("Kernel", False, "uname failed")
+
+
+# --- Test: HDMI ---
+
+def test_hdmi(result):
+    print("\n[TEST 6] HDMI Output Test")
+    if os.path.exists("/dev/fb0"):
+        result.add("/dev/fb0", True)
+    else:
+        result.add("/dev/fb0", False, "not found")
+        drm_path = "/sys/class/drm"
+        if os.path.exists(drm_path):
+            connectors = [d for d in os.listdir(drm_path)
+                         if "HDMI" in d or "card" in d]
+            if connectors:
+                result.add("DRM connectors", True, ", ".join(connectors))
+            else:
+                result.add("DRM connectors", False, "none")
+
+
+# --- Main ---
 
 def main():
     print("=" * 60)
-    print("  Zybo Z7-20 하드웨어 종합 테스트 (PetaLinux 2022.1 호환)")
-    print(f"  실행 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("  Zybo Z7-20 Hardware Test (Python)")
+    print(f"  Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
     result = TestResult()
-
-    test_system_info(result)
-    test_filesystem(result)
+    test_memory(result)
     test_leds(result)
-    test_led_chase(result)
     test_switches(result)
-    test_switch_interrupt(result)
     test_buttons(result)
     test_network(result)
-    test_hdmi_output(result)
-    test_hdmi_input(result)
-    test_pcam(result)
-    test_uart_loopback(result)
-
-    all_passed = result.summary()
-
-    report = {
-        "timestamp": datetime.now().isoformat(),
-        "petalinux_version": "2022.1",
-        "hostname": subprocess.check_output(["hostname"],
-                                            stderr=subprocess.STDOUT).decode().strip(),
-        "results": result.results
-    }
-
-    report_path = "/home/root/test_report.json"
-    try:
-        with open(report_path, "w") as f:
-            json.dump(report, f, indent=2, ensure_ascii=False)
-        print(f"\n상세 리포트 저장: {report_path}")
-    except:
-        print("\n리포트 저장 실패 (읽기 전용 파일시스템)")
-
-    sys.exit(0 if all_passed else 1)
+    test_hdmi(result)
+    result.summary()
 
 
 if __name__ == "__main__":
     main()
+```
+
+#### Python 코드 실행
+
+```bash
+python3 hw_test.py
 ```
 
 ### 13.4 스크립트 실행
@@ -2559,44 +2588,44 @@ chmod +x hardware_test.py
 python3 hardware_test.py
 ```
 
-### 13.5 개별 테스트 실행 (선택)
+### 13.5 개별 테스트 실행 (빠른 확인)
 
-#### LED 빠른 테스트
+#### 시스템 정보만 확인
 
 ```bash
-python3 -c "
-import os, time
+uname -a
+cat /proc/meminfo | head -5
+cat /proc/cpuinfo | grep -i hardware
+```
 
-base = None
-for chip in sorted(os.listdir('/sys/class/gpio')):
-    if chip.startswith('gpiochip'):
-        lp = f'/sys/class/gpio/{chip}/label'
-        if os.path.exists(lp):
-            with open(lp) as f:
-                if 'led' in f.read().lower():
-                    with open(f'/sys/class/gpio/{chip}/base') as fb:
-                        base = int(fb.read().strip())
-                    break
+#### LED 빠른 테스트 (C 없이)
 
-if base is None:
-    print('LED GPIO 미발견'); exit(1)
+```bash
+# GPIO base 번호 확인
+cat /sys/class/gpio/gpiochip*/label
 
-for i in range(4):
-    g = base + i
-    os.system(f'echo {g} > /sys/class/gpio/export')
-    os.system(f'echo out > /sys/class/gpio/gpio{g}/direction')
-    os.system(f'echo 1 > /sys/class/gpio/gpio{g}/value')
-    time.sleep(0.3)
-    os.system(f'echo 0 > /sys/class/gpio/gpio{g}/value')
-    os.system(f'echo {g} > /sys/class/gpio/unexport')
-print('LED 테스트 완료')
-"
+# LED GPIO로 점등 테스트
+echo <GPIO_NUM> > /sys/class/gpio/export
+echo out > /sys/class/gpio/gpio<GPIO_NUM>/direction
+echo 1 > /sys/class/gpio/gpio<GPIO_NUM>/value
+sleep 1
+echo 0 > /sys/class/gpio/gpio<GPIO_NUM>/value
+echo <GPIO_NUM> > /sys/class/gpio/unexport
 ```
 
 #### 네트워크 빠른 확인
 
 ```bash
-hostname -I && ping -c 3 8.8.8.8
+hostname -I
+ping -c 3 8.8.8.8
+ip addr show eth0
+```
+
+#### 디바이스 트리 확인
+
+```bash
+ls /sys/firmware/devicetree/base/
+cat /proc/cmdline
 ```
 
 ---
