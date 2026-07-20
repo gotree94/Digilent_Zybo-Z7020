@@ -2006,7 +2006,7 @@ int uio_get_pin(struct uio_gpio *g, int bit)
 
 void test_leds(void)
 {
-    printf("\n[TEST 1] LED Test\n");
+    printf("\n[TEST 1] LED Test (LD4~LD9, 6 LEDs)\n");
 
     struct uio_gpio led;
     if (uio_open(&led, "/dev/uio0") < 0) {
@@ -2015,26 +2015,28 @@ void test_leds(void)
     }
     printf("  [OK]   LED UIO opened (/dev/uio0, 0x41220000)\n");
 
-    /* All 4 pins as output */
-    for (int i = 0; i < 4; i++)
+    /* All 6 pins as output */
+    int i;
+    for (i = 0; i < 6; i++)
         uio_set_direction(&led, i, 0);
 
     /* Individual LED test */
-    for (int i = 0; i < 4; i++) {
+    for (i = 0; i < 6; i++) {
         uio_set_pin(&led, i, 1);
         usleep(300000);
 
         int val = uio_get_pin(&led, i);
         uio_set_pin(&led, i, 0);
 
-        printf("  [%s] LED%d read=%d\n",
-               (val == 1) ? "OK " : "FAIL", i, val);
+        printf("  [%s] LED%d (LD%d) read=%d\n",
+               (val == 1) ? "OK " : "FAIL", i, i + 4, val);
     }
 
     /* Chase pattern */
     printf("\n[TEST 1b] LED Chase Pattern\n");
-    for (int round = 0; round < 3; round++) {
-        for (int i = 0; i < 4; i++) {
+    int round;
+    for (round = 0; round < 3; round++) {
+        for (i = 0; i < 6; i++) {
             uio_set_pin(&led, i, 1);
             usleep(100000);
             uio_set_pin(&led, i, 0);
@@ -2051,7 +2053,7 @@ void test_leds(void)
 
 void test_switches(void)
 {
-    printf("\n[TEST 2] Switch Test\n");
+    printf("\n[TEST 2] Switch Test (SW0~SW3)\n");
 
     struct uio_gpio sw;
     if (uio_open(&sw, "/dev/uio1") < 0) {
@@ -2060,11 +2062,12 @@ void test_switches(void)
     }
     printf("  [OK]   Switch UIO opened (/dev/uio1, 0x41210000)\n");
 
-    /* All pins as input */
-    for (int i = 0; i < 2; i++)
+    /* All 4 pins as input */
+    int i;
+    for (i = 0; i < 4; i++)
         uio_set_direction(&sw, i, 1);
 
-    for (int i = 0; i < 2; i++) {
+    for (i = 0; i < 4; i++) {
         int val = uio_get_pin(&sw, i);
         printf("  [OK]   SW%d = %d\n", i, val);
     }
@@ -2384,27 +2387,27 @@ class UioGpio:
 # --- Test: LED ---
 
 def test_leds(result):
-    print("\n[TEST 1] LED Test")
+    print("\n[TEST 1] LED Test (LD4~LD9, 6 LEDs)")
     try:
-        led = UioGpio(UIO_DEVS["led"])
+        led = UioGpio(UIO_DEVS["led"], num_pins=6)
     except Exception as e:
         result.add("LED - UIO open", False, str(e))
         return
     result.add("LED - UIO open", True, UIO_DEVS["led"])
 
-    for i in range(4):
+    for i in range(6):
         led.set_direction(i, False)
 
-    for i in range(4):
+    for i in range(6):
         led.set_pin(i, 1)
         time.sleep(0.3)
         val = led.get_pin(i)
         led.set_pin(i, 0)
-        result.add(f"LED{i}", val == 1, f"val={val}")
+        result.add(f"LED{i} (LD{i+4})", val == 1, f"val={val}")
 
     print("  Running chase pattern...")
     for _ in range(3):
-        for i in range(4):
+        for i in range(6):
             led.set_pin(i, 1)
             time.sleep(0.1)
             led.set_pin(i, 0)
@@ -2416,18 +2419,18 @@ def test_leds(result):
 # --- Test: Switch ---
 
 def test_switches(result):
-    print("\n[TEST 2] Switch Test")
+    print("\n[TEST 2] Switch Test (SW0~SW3)")
     try:
-        sw = UioGpio(UIO_DEVS["switch"], num_pins=2)
+        sw = UioGpio(UIO_DEVS["switch"], num_pins=4)
     except Exception as e:
         result.add("Switch - UIO open", False, str(e))
         return
     result.add("Switch - UIO open", True, UIO_DEVS["switch"])
 
-    for i in range(2):
+    for i in range(4):
         sw.set_direction(i, True)
 
-    for i in range(2):
+    for i in range(4):
         val = sw.get_pin(i)
         result.add(f"SW{i}", True, f"val={val}")
 
@@ -2758,9 +2761,9 @@ cat /proc/cmdline
       또는 sysfs GPIO로 PL GPIO 제어 불가
 
 원인: Zybo Z7-20의 PL GPIO는 UIO 드라이버(uio_pdrv_genirq)에 의해 점유됨
-      - uio0 = Buttons (41220000)
-      - uio1 = Switches (41210000)
-      - uio2 = LEDs (41200000)
+      - uio0 = LEDs (41220000, 6 outputs)
+      - uio1 = Switches (41210000, 4 inputs)
+      - uio2 = Buttons (41200000, 4 inputs)
 
 해결:
   1. UIO 디바이스 확인:
